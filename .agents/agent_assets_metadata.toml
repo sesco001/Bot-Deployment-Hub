@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Tzoj5enUWX-Uku6m6OAsZ"
+uri = "file://cpanel-deploy.tar.gz"
+type = "unspecified"
+title = "cPanel Deployment Package (cpanel-deploy.tar.gz)"
