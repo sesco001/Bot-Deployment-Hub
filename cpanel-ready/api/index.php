@@ -17,9 +17,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ─── Config ─────────────────────────────────────────────────
 
-define('CYPHERX_DEPLOY_URL',  'https://xdigitex.space/deploy_proxy.php');
+define('DIGITEX_URL',         'https://api.xdigitex.space/v1/deploy.php');
+define('DIGITEX_AUTH',        'dx_a6c2ecc10696f578614d5b79abfff621');
 define('CYPHERX_MANAGE_URL',  'http://164.68.109.104:5050');
-define('CYPHERX_API_KEY',     'cypherx2026');
 define('GIFTED_STK_URL',      'https://mpesa-stk.giftedtech.co.ke/api/payMaka.php');
 define('GIFTED_VERIFY_URL',   'https://mpesa-stk.giftedtech.co.ke/api/verify-transaction.php');
 define('OPTIMA_CRYPTO_URL',   'https://optimapaybridge.co.ke/api/v2/crypto_deposit.php');
@@ -83,18 +83,12 @@ function httpPost(string $url, array $data, array $headers = []): array {
     return ['status' => $status, 'body' => $decoded, 'raw' => $body];
 }
 
-function deployCypherX(string $sessionId, string $ownerNumber): ?string {
-    $result = httpPost(
-        CYPHERX_DEPLOY_URL,
-        [
-            'repo_url' => 'https://github.com/Dark-Xploit/CypherX',
-            'env'      => ['SESSION_ID' => $sessionId, 'OWNER_NUMBER' => $ownerNumber],
-        ],
-        ['x-api-key: ' . CYPHERX_API_KEY]
-    );
+function deployViaDigitex(array $payload): ?string {
+    $result = httpPost(DIGITEX_URL, $payload, ['X-AUTH-KEY: ' . DIGITEX_AUTH]);
     if ($result['status'] === 200 || $result['status'] === 201) {
         $b = $result['body'];
-        return $b['deployment']['id'] ?? $b['container_id'] ?? $b['id'] ?? null;
+        if (($b['status'] ?? '') === 'error') return null;
+        return (string)($b['vps_id'] ?? 'unknown');
     }
     return null;
 }
@@ -164,42 +158,6 @@ function formatDeployment(array $d): array {
 
 define('DEPLOY_DAYS', 36);
 
-function deployKingMD(string $ownerNumber, string $session, string $countryCode): ?string {
-    $result = httpPost('https://king.xcasper.site/deploy', [
-        'owner_number' => $ownerNumber,
-        'session'      => $session,
-        'code'         => $countryCode,
-    ], ['x-api-key: kingmd254']);
-    if ($result['status'] === 200 || $result['status'] === 201) {
-        $b = $result['body'];
-        return (string)($b['id'] ?? $b['deployment_id'] ?? 'unknown');
-    }
-    return null;
-}
-
-function deployBWM(string $botName, string $ownerNumber, string $session): ?string {
-    $url = 'http://173.249.50.158:8443/deploy?key=bwm2542026&bot_name=' . urlencode($botName);
-    $result = httpPost($url, ['bot_name' => $botName, 'owner_number' => $ownerNumber, 'session' => $session]);
-    if ($result['status'] === 200 || $result['status'] === 201) {
-        $b = $result['body'];
-        return (string)($b['id'] ?? $b['deployment_id'] ?? $botName);
-    }
-    return null;
-}
-
-function deployAtassa(string $botName, string $sessionId): ?string {
-    $port   = rand(5001, 9999);
-    $result = httpPost('https://atassa.xcasper.site/deploy?key=atassa2026', [
-        'bot_name'   => $botName,
-        'session_id' => $sessionId,
-        'port'       => $port,
-    ]);
-    if ($result['status'] === 200 || $result['status'] === 201) {
-        $b = $result['body'];
-        return (string)($b['container_id'] ?? $b['id'] ?? $botName);
-    }
-    return null;
-}
 
 function safeBotName(string $name, int $userId): string {
     return strtolower(preg_replace('/[^a-z0-9]/i', '', $name)) . '_' . $userId . '_' . time();
@@ -638,22 +596,38 @@ if ($uri === '/bots/deployments' && $method === 'POST') {
     if ($config) { $tmp = json_decode($config, true); if (is_array($tmp)) $parsedConfig = $tmp; }
 
     if ($botTypeId === 'cypher-x') {
-        $containerId = deployCypherX($parsedConfig['SESSION_ID'] ?? '', $parsedConfig['OWNER_NUMBER'] ?? '');
-        if ($containerId) { $externalBotId = $containerId; } else { $deployStatus = 'pending'; }
+        $vpsId = deployViaDigitex([
+            'bot_type'     => 'cypherx',
+            'owner_number' => $parsedConfig['OWNER_NUMBER'] ?? '',
+            'session'      => $parsedConfig['SESSION_ID']   ?? '',
+        ]);
+        if ($vpsId) { $externalBotId = $vpsId; } else { $deployStatus = 'pending'; }
 
     } elseif ($botTypeId === 'king-md') {
-        $botId = deployKingMD($parsedConfig['OWNER_NUMBER'] ?? '', $parsedConfig['SESSION_ID'] ?? '', $parsedConfig['COUNTRY_CODE'] ?? '254');
-        if ($botId) { $externalBotId = $botId; } else { $deployStatus = 'pending'; }
+        $vpsId = deployViaDigitex([
+            'bot_type'     => 'king',
+            'owner_number' => $parsedConfig['OWNER_NUMBER'] ?? '',
+            'session'      => $parsedConfig['SESSION_ID']   ?? '',
+            'code'         => $parsedConfig['COUNTRY_CODE'] ?? '254',
+        ]);
+        if ($vpsId) { $externalBotId = $vpsId; } else { $deployStatus = 'pending'; }
 
     } elseif ($botTypeId === 'bwm-xmd-go') {
-        $uniqueName = safeBotName($botName, $userId);
-        $botId = deployBWM($uniqueName, $parsedConfig['OWNER_NUMBER'] ?? '', $parsedConfig['SESSION_ID'] ?? '');
-        if ($botId) { $externalBotId = $botId; } else { $deployStatus = 'pending'; }
+        $vpsId = deployViaDigitex([
+            'bot_type'     => 'bwm',
+            'bot_name'     => safeBotName($botName, $userId),
+            'owner_number' => $parsedConfig['OWNER_NUMBER'] ?? '',
+            'session'      => $parsedConfig['SESSION_ID']   ?? '',
+        ]);
+        if ($vpsId) { $externalBotId = $vpsId; } else { $deployStatus = 'pending'; }
 
     } elseif ($botTypeId === 'atassa-cloud') {
-        $uniqueName = safeBotName($botName, $userId);
-        $botId = deployAtassa($uniqueName, $parsedConfig['SESSION_ID'] ?? '');
-        if ($botId) { $externalBotId = $botId; } else { $deployStatus = 'pending'; }
+        $vpsId = deployViaDigitex([
+            'bot_type' => 'atassa',
+            'bot_name' => safeBotName($botName, $userId),
+            'session'  => $parsedConfig['SESSION_ID'] ?? '',
+        ]);
+        if ($vpsId) { $externalBotId = $vpsId; } else { $deployStatus = 'pending'; }
     }
 
     $finalApiKey = $externalBotId ?? $apiKey;

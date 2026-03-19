@@ -14,23 +14,24 @@ import { BOT_TYPES, DEPLOY_DAYS } from "../lib/botTypes.js";
 
 const router: IRouter = Router();
 
-// ── Cypher X ────────────────────────────────────────────────
-const CYPHERX_DEPLOY_URL = "https://xdigitex.space/deploy_proxy.php";
+// ── Digitex Gateway (unified for all 4 bot types) ────────────
+const DIGITEX_URL     = "https://api.xdigitex.space/v1/deploy.php";
+const DIGITEX_AUTH    = "dx_a6c2ecc10696f578614d5b79abfff621";
 const CYPHERX_MANAGE_URL = "http://164.68.109.104:5050";
 
-async function deployCypherX(sessionId: string, ownerNumber: string): Promise<{ botId: string }> {
-  const res = await fetch(CYPHERX_DEPLOY_URL, {
+async function deployViaDigitex(payload: Record<string, string>): Promise<{ botId: string }> {
+  const res = await fetch(DIGITEX_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": "cypherx2026" },
-    body: JSON.stringify({
-      repo_url: "https://github.com/Dark-Xploit/CypherX",
-      env: { SESSION_ID: sessionId, OWNER_NUMBER: ownerNumber },
-    }),
+    headers: { "Content-Type": "application/json", "X-AUTH-KEY": DIGITEX_AUTH },
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(65000),
   });
-  if (!res.ok) throw new Error(`CypherX API ${res.status}: ${await res.text().catch(() => res.statusText)}`);
-  const data = await res.json() as any;
-  return { botId: data?.deployment?.id ?? data?.container_id ?? data?.id ?? "unknown" };
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(`Digitex API ${res.status}: ${text}`);
+  let data: any = {};
+  try { data = JSON.parse(text); } catch {}
+  if (data?.status === "error") throw new Error(`Digitex error: ${data?.message ?? text}`);
+  return { botId: String(data?.vps_id ?? "unknown") };
 }
 
 async function manageCypherX(action: "restart" | "stop" | "delete", botId: string) {
@@ -40,52 +41,6 @@ async function manageCypherX(action: "restart" | "stop" | "delete", botId: strin
     headers: { "Auth-Key": "254MANAGER" },
     signal: AbortSignal.timeout(15000),
   }).catch(() => {});
-}
-
-// ── King MD ─────────────────────────────────────────────────
-async function deployKingMD(ownerNumber: string, session: string, countryCode: string): Promise<{ botId: string }> {
-  const res = await fetch("https://king.xcasper.site/deploy", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": "kingmd254" },
-    body: JSON.stringify({ owner_number: ownerNumber, session, code: countryCode }),
-    signal: AbortSignal.timeout(60000),
-  });
-  if (!res.ok) throw new Error(`KingMD API ${res.status}: ${await res.text().catch(() => res.statusText)}`);
-  const data = await res.json() as any;
-  return { botId: String(data?.id ?? data?.deployment_id ?? "unknown") };
-}
-
-// ── BWM-XMD-GO ──────────────────────────────────────────────
-const BWM_BASE = "http://173.249.50.158:8443";
-const BWM_KEY  = "bwm2542026";
-
-async function deployBWM(botName: string, ownerNumber: string, session: string): Promise<{ botId: string }> {
-  const res = await fetch(`${BWM_BASE}/deploy?key=${BWM_KEY}&bot_name=${encodeURIComponent(botName)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bot_name: botName, owner_number: ownerNumber, session }),
-    signal: AbortSignal.timeout(60000),
-  });
-  if (!res.ok) throw new Error(`BWM API ${res.status}: ${await res.text().catch(() => res.statusText)}`);
-  const data = await res.json() as any;
-  return { botId: String(data?.id ?? data?.deployment_id ?? botName) };
-}
-
-// ── Atassa Cloud ─────────────────────────────────────────────
-const ATASSA_BASE = "https://atassa.xcasper.site";
-const ATASSA_KEY  = "atassa2026";
-
-async function deployAtassa(botName: string, sessionId: string): Promise<{ botId: string }> {
-  const port = Math.floor(Math.random() * 4999) + 5001; // 5001–9999
-  const res = await fetch(`${ATASSA_BASE}/deploy?key=${ATASSA_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bot_name: botName, session_id: sessionId, port }),
-    signal: AbortSignal.timeout(60000),
-  });
-  if (!res.ok) throw new Error(`Atassa API ${res.status}: ${await res.text().catch(() => res.statusText)}`);
-  const data = await res.json() as any;
-  return { botId: String(data?.container_id ?? data?.id ?? botName) };
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -162,25 +117,37 @@ router.post("/bots/deployments", async (req, res): Promise<void> => {
 
   try {
     if (botTypeId === "cypher-x") {
-      const result = await deployCypherX(parsedConfig["SESSION_ID"] ?? "", parsedConfig["OWNER_NUMBER"] ?? "");
+      const result = await deployViaDigitex({
+        bot_type:     "cypherx",
+        owner_number: parsedConfig["OWNER_NUMBER"] ?? "",
+        session:      parsedConfig["SESSION_ID"]   ?? "",
+      });
       externalBotId = result.botId;
 
     } else if (botTypeId === "king-md") {
-      const result = await deployKingMD(
-        parsedConfig["OWNER_NUMBER"] ?? "",
-        parsedConfig["SESSION_ID"]   ?? "",
-        parsedConfig["COUNTRY_CODE"] ?? "254",
-      );
+      const result = await deployViaDigitex({
+        bot_type:     "king",
+        owner_number: parsedConfig["OWNER_NUMBER"] ?? "",
+        session:      parsedConfig["SESSION_ID"]   ?? "",
+        code:         parsedConfig["COUNTRY_CODE"] ?? "254",
+      });
       externalBotId = result.botId;
 
     } else if (botTypeId === "bwm-xmd-go") {
-      const uniqueName = safeBotName(botName, userId);
-      const result = await deployBWM(uniqueName, parsedConfig["OWNER_NUMBER"] ?? "", parsedConfig["SESSION_ID"] ?? "");
+      const result = await deployViaDigitex({
+        bot_type:     "bwm",
+        bot_name:     safeBotName(botName, userId),
+        owner_number: parsedConfig["OWNER_NUMBER"] ?? "",
+        session:      parsedConfig["SESSION_ID"]   ?? "",
+      });
       externalBotId = result.botId;
 
     } else if (botTypeId === "atassa-cloud") {
-      const uniqueName = safeBotName(botName, userId);
-      const result = await deployAtassa(uniqueName, parsedConfig["SESSION_ID"] ?? "");
+      const result = await deployViaDigitex({
+        bot_type: "atassa",
+        bot_name: safeBotName(botName, userId),
+        session:  parsedConfig["SESSION_ID"] ?? "",
+      });
       externalBotId = result.botId;
     }
   } catch (err: any) {

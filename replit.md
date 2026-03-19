@@ -101,17 +101,20 @@ All routes under `/api`:
 
 ## Bot Types (in artifacts/api-server/src/lib/botTypes.ts)
 
-All 4 live bots — 36 days nonstop on VPS:
+All bots deploy via the **Digitex Gateway** — one unified endpoint for all 4 types:
+- URL: `https://api.xdigitex.space/v1/deploy.php`
+- Auth: `X-AUTH-KEY: dx_a6c2ecc10696f578614d5b79abfff621`
+- Response: `{ status, vps_id, cost }` — store `vps_id` as external bot ID
 
-| ID | Name | Cost | Deploy API |
-|----|------|------|------------|
-| `cypher-x` | Cypher X | 30 MD | `xdigitex.space/deploy_proxy.php` (x-api-key: cypherx2026) |
-| `king-md` | King MD Bot | 30 MD | `king.xcasper.site/deploy` (x-api-key: kingmd254) |
-| `bwm-xmd-go` | BWM-XMD-GO | 50 MD | `173.249.50.158:8443/deploy?key=bwm2542026` |
-| `atassa-cloud` | Atassa Cloud | 50 MD | `atassa.xcasper.site/deploy?key=atassa2026` |
+| ID | Name | Cost | `bot_type` field |
+|----|------|------|-----------------|
+| `cypher-x` | Cypher X | 30 MD | `cypherx` |
+| `king-md` | King MD Bot | 30 MD | `king` |
+| `bwm-xmd-go` | BWM-XMD-GO | 50 MD | `bwm` |
+| `atassa-cloud` | Atassa Cloud | 50 MD | `atassa` |
 
 - `DEPLOY_DAYS = 36` constant used everywhere
-- Cypher X manage: `164.68.109.104:5050` (Auth-Key: 254MANAGER)
+- Cypher X manage (restart/stop/delete): `164.68.109.104:5050` (Auth-Key: 254MANAGER)
 - All deployments set `expiresAt = now + 36 days`
 
 ## Codegen
