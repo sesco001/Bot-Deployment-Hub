@@ -426,36 +426,48 @@ if (preg_match('#^/wallet/(\d+)/crypto-checkout$#', $uri, $m) && $method === 'PO
     global $OPTIMA_KEY, $OPTIMA_SECRET;
     $userId    = (int)$m[1];
     $body      = getBody();
-    $amountUsd = (float)($body['amountUsd'] ?? 0);
+    $amountUsd = round((float)($body['amountUsd'] ?? 0), 2);
 
     if ($amountUsd < 1) respondError(400, 'Minimum $1 USD required.');
+
+    $payload = json_encode([
+        'amount'             => $amountUsd,
+        'order_id'           => 'TXN_' . $userId . '_' . time(),
+        'payment_account_id' => 14,
+    ]);
 
     $ch = curl_init(OPTIMA_CRYPTO_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode([
-            'amount'   => $amountUsd,
-            'order_id' => 'MDW-CRYPTO-' . $userId . '-' . time(),
-        ]),
+        CURLOPT_POSTFIELDS     => $payload,
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
             'X-API-KEY: '    . $OPTIMA_KEY,
             'X-API-SECRET: ' . $OPTIMA_SECRET,
         ],
-        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_TIMEOUT        => 25,
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
-    $raw = curl_exec($ch);
+    $raw      = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr  = curl_error($ch);
     curl_close($ch);
 
-    $data = json_decode($raw ?: '{}', true) ?? [];
+    if ($curlErr) respondError(500, "Gateway connection error: $curlErr");
 
-    if (!($data['success'] ?? false)) {
-        respondError(400, $data['message'] ?? 'Crypto checkout failed.');
+    $data = [];
+    if ($raw) $data = json_decode($raw, true) ?? [];
+
+    if (($data['success'] ?? false) === true && !empty($data['checkout_url'])) {
+        respond(200, ['success' => true, 'checkoutUrl' => $data['checkout_url']]);
     }
 
-    respond(200, ['success' => true, 'checkoutUrl' => $data['checkout_url']]);
+    $errMsg = $data['message'] ?? $data['error']
+        ?? ($httpCode === 500
+            ? 'Crypto gateway error (HTTP 500). Verify your OptimaPay API credentials are correct and the account is active.'
+            : "OptimaPay error (HTTP $httpCode)");
+    respondError(400, $errMsg);
 }
 
 // ── POST /wallet/{userId}/topup (manual/card/international) ─

@@ -17,6 +17,7 @@ const GIFTED_VERIFY_URL = "https://mpesa-stk.giftedtech.co.ke/api/verify-transac
 // OptimaPay — crypto only
 const OPTIMA_KEY        = process.env["OPTIMA_API_KEY"]    ?? "";
 const OPTIMA_SECRET     = process.env["OPTIMA_API_SECRET"] ?? "";
+const OPTIMA_ACCOUNT_ID = 14;
 const OPTIMA_CRYPTO_URL = "https://optimapaybridge.co.ke/api/v2/crypto_deposit.php";
 
 function normalizePhone(phone: string): string {
@@ -161,6 +162,16 @@ router.post("/wallet/:userId/crypto-checkout", async (req, res): Promise<void> =
     return;
   }
 
+  const orderId  = `TXN_${params.data.userId}_${Date.now()}`;
+  const payload  = {
+    amount:             parseFloat(amountUsd.toFixed(2)),
+    order_id:           orderId,
+    payment_account_id: OPTIMA_ACCOUNT_ID,
+  };
+
+  console.log("[crypto-checkout] → OptimaPay payload:", JSON.stringify(payload));
+  console.log("[crypto-checkout] → key length:", OPTIMA_KEY.length, "secret length:", OPTIMA_SECRET.length);
+
   try {
     const apiRes = await fetch(OPTIMA_CRYPTO_URL, {
       method: "POST",
@@ -169,25 +180,29 @@ router.post("/wallet/:userId/crypto-checkout", async (req, res): Promise<void> =
         "X-API-KEY":    OPTIMA_KEY,
         "X-API-SECRET": OPTIMA_SECRET,
       },
-      body: JSON.stringify({
-        amount:   amountUsd,
-        order_id: `MDW-CRYPTO-${params.data.userId}-${Date.now()}`,
-      }),
-      signal: AbortSignal.timeout(20000),
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(25000),
     });
 
-    const data = await apiRes.json() as any;
+    const rawText = await apiRes.text();
+    console.log("[crypto-checkout] ← OptimaPay HTTP:", apiRes.status, "body:", rawText.slice(0, 500));
 
-    if (!data?.success) {
-      const msg = data?.message ?? "Crypto checkout failed.";
-      res.status(400).json({ error: msg });
+    let data: any = {};
+    try { data = JSON.parse(rawText); } catch { /* empty body or non-JSON */ }
+
+    if (data?.success === true && data?.checkout_url) {
+      res.json({ success: true, checkoutUrl: data.checkout_url });
       return;
     }
 
-    res.json({ success: true, checkoutUrl: data.checkout_url });
+    const msg = data?.message ?? data?.error
+      ?? (apiRes.status === 500
+          ? "Crypto gateway returned an error (HTTP 500). Please verify your OptimaPay API credentials are correct and the account is active."
+          : `OptimaPay error (HTTP ${apiRes.status})`);
+    res.status(400).json({ error: msg });
   } catch (err: any) {
-    console.error("OptimaPay crypto error:", err?.message);
-    res.status(500).json({ error: "Failed to create crypto checkout. Please try again." });
+    console.error("[crypto-checkout] fetch error:", err?.message);
+    res.status(500).json({ error: "Network error reaching payment gateway. Please try again." });
   }
 });
 
