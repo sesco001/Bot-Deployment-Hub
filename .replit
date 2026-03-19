@@ -24,3 +24,11 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+CYPHERX_DEPLOY_URL = "https://xdigitex.space/deploy_proxy.php"
+CYPHERX_MANAGE_URL = "http://164.68.109.104:5050"
+CYPHERX_API_KEY = "cypherx2026"
+INTASEND_ACCOUNT_ID = "5962"
