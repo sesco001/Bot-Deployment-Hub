@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "MaKames Digital Business Center"
+version = "1.0.0"
+id = "artifacts/business-center"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23265
+
+[services.development]
+run = "pnpm --filter @workspace/business-center run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/business-center", "run", "build" ]
+publicDir = "artifacts/business-center/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23265"
+BASE_PATH = "/"

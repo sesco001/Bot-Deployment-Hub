@@ -1,15 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: MaKames Digital Business Center API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: users
+    description: User management
+  - name: wallet
+    description: Wallet and coin operations
+  - name: bots
+    description: Bot deployment and management
+  - name: referrals
+    description: Referral program
 paths:
   /healthz:
     get:
@@ -24,6 +31,309 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /users/register:
+    post:
+      operationId: registerUser
+      tags: [users]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterUserBody"
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Bad request
+
+  /users/login:
+    post:
+      operationId: loginUser
+      tags: [users]
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginUserBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Unauthorized
+
+  /users/{userId}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user profile
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: Not found
+
+  /wallet/{userId}:
+    get:
+      operationId: getWallet
+      tags: [wallet]
+      summary: Get user wallet balance
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Wallet info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+
+  /wallet/{userId}/topup:
+    post:
+      operationId: topUpWallet
+      tags: [wallet]
+      summary: Add coins to wallet
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopUpBody"
+      responses:
+        "200":
+          description: Wallet topped up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+
+  /wallet/{userId}/transactions:
+    get:
+      operationId: getTransactions
+      tags: [wallet]
+      summary: Get wallet transactions
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+
+  /bots:
+    get:
+      operationId: listBots
+      tags: [bots]
+      summary: List available bot types
+      responses:
+        "200":
+          description: List of bot types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotType"
+
+  /bots/deployments:
+    get:
+      operationId: listDeployments
+      tags: [bots]
+      summary: List all bot deployments for a user
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of deployments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BotDeployment"
+
+    post:
+      operationId: deployBot
+      tags: [bots]
+      summary: Deploy a bot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeployBotBody"
+      responses:
+        "201":
+          description: Bot deployed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotDeployment"
+        "400":
+          description: Insufficient funds or bad request
+
+  /bots/deployments/{deploymentId}:
+    get:
+      operationId: getDeployment
+      tags: [bots]
+      summary: Get a specific deployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deployment found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotDeployment"
+        "404":
+          description: Not found
+
+    patch:
+      operationId: updateDeployment
+      tags: [bots]
+      summary: Update bot deployment settings
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeploymentBody"
+      responses:
+        "200":
+          description: Deployment updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotDeployment"
+
+    delete:
+      operationId: stopDeployment
+      tags: [bots]
+      summary: Stop a bot deployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Stopped
+
+  /bots/deployments/{deploymentId}/restart:
+    post:
+      operationId: restartDeployment
+      tags: [bots]
+      summary: Restart a bot deployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotDeployment"
+
+  /referrals/{userId}:
+    get:
+      operationId: getReferrals
+      tags: [referrals]
+      summary: Get referral info for a user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Referral info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralInfo"
+
+  /referrals/apply:
+    post:
+      operationId: applyReferral
+      tags: [referrals]
+      summary: Apply a referral code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyReferralBody"
+      responses:
+        "200":
+          description: Referral applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferralResult"
+        "400":
+          description: Bad referral code
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +344,285 @@ components:
       required:
         - status
 
+    RegisterUserBody:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        referralCode:
+          type: ["string", "null"]
+      required:
+        - username
+        - email
+        - password
+
+    LoginUserBody:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    LoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        token:
+          type: string
+      required:
+        - user
+        - token
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        referralCode:
+          type: string
+        referredBy:
+          type: ["integer", "null"]
+        freeDeployDaysLeft:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - username
+        - email
+        - referralCode
+        - freeDeployDaysLeft
+        - createdAt
+
+    Wallet:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        balanceMd:
+          type: integer
+        balanceKes:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - balanceMd
+        - balanceKes
+        - updatedAt
+
+    TopUpBody:
+      type: object
+      properties:
+        amountKes:
+          type: integer
+        paymentMethod:
+          type: string
+          enum: [mpesa, card, international]
+        paymentReference:
+          type: string
+      required:
+        - amountKes
+        - paymentMethod
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        type:
+          type: string
+          enum: [topup, deduction, refund, bonus]
+        amountMd:
+          type: integer
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - type
+        - amountMd
+        - description
+        - createdAt
+
+    BotType:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        costMd:
+          type: integer
+        apiEndpoint:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+      required:
+        - id
+        - name
+        - description
+        - costMd
+        - apiEndpoint
+        - features
+        - isActive
+
+    BotDeployment:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        botTypeId:
+          type: string
+        botName:
+          type: string
+        status:
+          type: string
+          enum: [running, stopped, error, pending]
+        apiKey:
+          type: ["string", "null"]
+        config:
+          type: ["string", "null"]
+        deployedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: ["string", "null"]
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - botTypeId
+        - botName
+        - status
+        - deployedAt
+        - updatedAt
+
+    DeployBotBody:
+      type: object
+      properties:
+        userId:
+          type: integer
+        botTypeId:
+          type: string
+        botName:
+          type: string
+        apiKey:
+          type: ["string", "null"]
+        config:
+          type: ["string", "null"]
+        useFreeDeployment:
+          type: boolean
+      required:
+        - userId
+        - botTypeId
+        - botName
+
+    UpdateDeploymentBody:
+      type: object
+      properties:
+        botName:
+          type: ["string", "null"]
+        apiKey:
+          type: ["string", "null"]
+        config:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+          enum: [running, stopped, null]
+
+    ReferralInfo:
+      type: object
+      properties:
+        userId:
+          type: integer
+        referralCode:
+          type: string
+        referralCount:
+          type: integer
+        freeDeployDaysLeft:
+          type: integer
+        referrals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReferralEntry"
+      required:
+        - userId
+        - referralCode
+        - referralCount
+        - freeDeployDaysLeft
+        - referrals
+
+    ReferralEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        referredUsername:
+          type: string
+        joinedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - referredUsername
+        - joinedAt
+
+    ApplyReferralBody:
+      type: object
+      properties:
+        userId:
+          type: integer
+        referralCode:
+          type: string
+      required:
+        - userId
+        - referralCode
+
+    ReferralResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        freeDeployDaysGranted:
+          type: integer
+      required:
+        - success
+        - message
+        - freeDeployDaysGranted

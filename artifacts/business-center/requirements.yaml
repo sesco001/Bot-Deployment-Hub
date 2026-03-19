@@ -1,0 +1,23 @@
+packages:
+  "framer-motion": "For page transitions, list staggering, and micro-interactions"
+  "react-hook-form": "For robust form state management"
+  "@hookform/resolvers": "For Zod validation integration with forms"
+  "date-fns": "For formatting transaction and deployment dates"
+  "clsx": "Utility for conditionally joining classNames"
+  "tailwind-merge": "Utility for merging tailwind classes without conflicts"
+
+images:
+  - path: "artifacts/business-center/public/images/hero-bg.png"
+    description: "Abstract, dark, sleek tech background with glowing purple and cyan neon light leaks, network nodes, and a sense of speed and digital business"
+    aspect_ratio: "16:9"
+  - path: "artifacts/business-center/public/images/logo.png"
+    description: "Minimalist, aggressive digital logo mark with interlocking 'M' and 'D' in glowing purple and cyan on a transparent background"
+    aspect_ratio: "1:1"
+  - path: "artifacts/business-center/public/images/bot-abstract.png"
+    description: "3D render of an abstract, futuristic floating robotic core, sleek dark metal with glowing purple accents, cinematic lighting"
+    aspect_ratio: "1:1"
+
+notes:
+  - Using a custom AuthContext to store session in localStorage as requested.
+  - API calls use the generated hooks from @workspace/api-client-react.
+  - The base design is a dark-mode first, premium 'cyber-professional' aesthetic.
