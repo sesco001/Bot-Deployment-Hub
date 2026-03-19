@@ -15,8 +15,7 @@ import { BOT_TYPES, DEPLOY_DAYS } from "../lib/botTypes.js";
 const router: IRouter = Router();
 
 // ── Digitex Gateway ──────────────────────────────────────────
-// Base: https://api.xdigitex.space/deploy.php  (no /v1/ prefix)
-const DIGITEX_URL  = "https://api.xdigitex.space/deploy.php";
+const DIGITEX_URL  = "https://api.xdigitex.space/v1/deploy.php";
 const DIGITEX_AUTH = "dx_a6c2ecc10696f578614d5b79abfff621";
 
 async function digitexRequest(payload: Record<string, string>, timeoutMs = 65000): Promise<any> {
@@ -28,10 +27,14 @@ async function digitexRequest(payload: Record<string, string>, timeoutMs = 65000
   });
   const text = await res.text().catch(() => "{}");
   let data: any = {};
-  try { data = JSON.parse(text); } catch {}
-  // Digitex returns {"error":"..."} on failure
-  if (data?.error) throw new Error(String(data.error));
-  if (!res.ok)     throw new Error(`Digitex HTTP ${res.status}`);
+  try { data = JSON.parse(text); } catch {
+    throw new Error(`Digitex non-JSON response: ${text.slice(0, 200)}`);
+  }
+  // Docs: status field is either "success" or "error"
+  if (data?.status === "error" || data?.error) {
+    throw new Error(String(data?.message ?? data?.error ?? "Digitex API error"));
+  }
+  if (!res.ok) throw new Error(`Digitex HTTP ${res.status}: ${text.slice(0, 200)}`);
   return data;
 }
 
@@ -132,6 +135,7 @@ router.post("/bots/deployments", async (req, res): Promise<void> => {
     if (botTypeId === "cypher-x") {
       const result = await deployViaDigitex({
         bot_type:     "cypherx",
+        bot_name:     safeBotName(botName, userId),
         owner_number: parsedConfig["OWNER_NUMBER"] ?? "",
         session:      parsedConfig["SESSION_ID"]   ?? "",
       });

@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ─── Config ─────────────────────────────────────────────────
 
-define('DIGITEX_URL',         'https://api.xdigitex.space/deploy.php');
+define('DIGITEX_URL',         'https://api.xdigitex.space/v1/deploy.php');
 define('DIGITEX_AUTH',        'dx_a6c2ecc10696f578614d5b79abfff621');
 define('CYPHERX_MANAGE_URL',  'http://164.68.109.104:5050');
 define('GIFTED_STK_URL',      'https://mpesa-stk.giftedtech.co.ke/api/payMaka.php');
@@ -623,6 +623,7 @@ if ($uri === '/bots/deployments' && $method === 'POST') {
     if ($botTypeId === 'cypher-x') {
         $vpsId = deployViaDigitex([
             'bot_type'     => 'cypherx',
+            'bot_name'     => safeBotName($botName, $userId),
             'owner_number' => $parsedConfig['OWNER_NUMBER'] ?? '',
             'session'      => $parsedConfig['SESSION_ID']   ?? '',
         ]);
