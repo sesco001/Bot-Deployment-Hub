@@ -78,6 +78,7 @@ export const BOT_TYPES: BotTypeDefinition[] = [
         placeholder: "KING_SESSION_HERE",
         required: true,
         isSecret: true,
+        helpLink: "https://peace-hub-mcbo.onrender.com/pair",
       },
       {
         key: "COUNTRY_CODE",
@@ -117,6 +118,7 @@ export const BOT_TYPES: BotTypeDefinition[] = [
         placeholder: "BWM_SESSION_HERE",
         required: true,
         isSecret: true,
+        helpLink: "https://main.bwmxmd.online/scan/",
       },
     ],
   },
@@ -144,6 +146,7 @@ export const BOT_TYPES: BotTypeDefinition[] = [
         placeholder: "Atassa~...",
         required: true,
         isSecret: true,
+        helpLink: "https://session.giftedtech.co.ke/",
       },
     ],
   },

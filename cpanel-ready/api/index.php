@@ -234,7 +234,7 @@ function getBotTypes(): array {
             'isActive'    => true,
             'envFields'   => [
                 ['key' => 'OWNER_NUMBER', 'label' => 'Owner Phone Number (with country code)', 'placeholder' => 'e.g. 254712345678', 'required' => true,  'isSecret' => false],
-                ['key' => 'SESSION_ID',   'label' => 'King MD Session String',                'placeholder' => 'KING_SESSION_HERE', 'required' => true,  'isSecret' => true],
+                ['key' => 'SESSION_ID',   'label' => 'King MD Session String',   'placeholder' => 'KING_SESSION_HERE', 'required' => true,  'isSecret' => true,  'helpLink' => 'https://peace-hub-mcbo.onrender.com/pair'],
                 ['key' => 'COUNTRY_CODE', 'label' => 'Country Code',                          'placeholder' => 'e.g. 254',          'required' => true,  'isSecret' => false],
             ],
         ],
@@ -250,7 +250,7 @@ function getBotTypes(): array {
             'isActive'    => true,
             'envFields'   => [
                 ['key' => 'OWNER_NUMBER', 'label' => 'Owner Phone Number',  'placeholder' => 'e.g. 254710000000', 'required' => true,  'isSecret' => false],
-                ['key' => 'SESSION_ID',   'label' => 'BWM Session ID',      'placeholder' => 'BWM_SESSION_HERE',  'required' => true,  'isSecret' => true],
+                ['key' => 'SESSION_ID',   'label' => 'BWM Session ID',       'placeholder' => 'BWM_SESSION_HERE',  'required' => true,  'isSecret' => true,  'helpLink' => 'https://main.bwmxmd.online/scan/'],
             ],
         ],
         [
@@ -264,7 +264,7 @@ function getBotTypes(): array {
             'features'    => ['Live VPS deployment — 36 days nonstop', 'Auto port allocation', 'Encrypted secure containers', 'Live console log streaming', 'Group automation', 'Always-on uptime'],
             'isActive'    => true,
             'envFields'   => [
-                ['key' => 'SESSION_ID', 'label' => 'Atassa Session ID', 'placeholder' => 'Atassa~...', 'required' => true, 'isSecret' => true],
+                ['key' => 'SESSION_ID', 'label' => 'Atassa Session ID', 'placeholder' => 'Atassa~...', 'required' => true, 'isSecret' => true, 'helpLink' => 'https://session.giftedtech.co.ke/'],
             ],
         ],
     ];
