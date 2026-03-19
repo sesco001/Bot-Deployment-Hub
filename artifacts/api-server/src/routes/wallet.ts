@@ -10,19 +10,14 @@ import {
 
 const router: IRouter = Router();
 
-const OPTIMA_KEY    = process.env["OPTIMA_API_KEY"]    ?? "";
-const OPTIMA_SECRET = process.env["OPTIMA_API_SECRET"] ?? "";
-const OPTIMA_ACCT   = Number(process.env["OPTIMA_ACCOUNT_ID"] ?? "14");
+// GiftedTech — low-fee M-Pesa STK (no API key required)
+const GIFTED_STK_URL    = "https://mpesa-stk.giftedtech.co.ke/api/payMaka.php";
+const GIFTED_VERIFY_URL = "https://mpesa-stk.giftedtech.co.ke/api/verify-transaction.php";
 
-const OPTIMA_STK_URL    = "https://optimapaybridge.co.ke/api/v2/stkpush.php";
-const OPTIMA_STATUS_URL = "https://optimapaybridge.co.ke/api/v2/status.php";
+// OptimaPay — crypto only
+const OPTIMA_KEY        = process.env["OPTIMA_API_KEY"]    ?? "";
+const OPTIMA_SECRET     = process.env["OPTIMA_API_SECRET"] ?? "";
 const OPTIMA_CRYPTO_URL = "https://optimapaybridge.co.ke/api/v2/crypto_deposit.php";
-
-const optimaHeaders = {
-  "Content-Type":  "application/json",
-  "X-API-Key":     OPTIMA_KEY,
-  "X-API-Secret":  OPTIMA_SECRET,
-};
 
 function normalizePhone(phone: string): string {
   const cleaned = phone.replace(/\D/g, "");
@@ -53,7 +48,7 @@ router.get("/wallet/:userId", async (req, res): Promise<void> => {
   res.json(wallets[0]);
 });
 
-// ── POST /wallet/:userId/stk-push  (OptimaPay M-Pesa) ───────
+// ── POST /wallet/:userId/stk-push  (GiftedTech M-Pesa) ──────
 
 router.post("/wallet/:userId/stk-push", async (req, res): Promise<void> => {
   const params = GetWalletParams.safeParse(req.params);
@@ -66,43 +61,40 @@ router.post("/wallet/:userId/stk-push", async (req, res): Promise<void> => {
   }
 
   const normalizedPhone = normalizePhone(String(phone));
-  const reference = `MDW-${params.data.userId}-${Date.now()}`;
+
+  if (!normalizedPhone.startsWith("254") || normalizedPhone.length !== 12) {
+    res.status(400).json({ error: "Enter a valid Safaricom number (e.g. 0712345678)." });
+    return;
+  }
 
   try {
-    const apiRes = await fetch(OPTIMA_STK_URL, {
+    const apiRes = await fetch(GIFTED_STK_URL, {
       method: "POST",
-      headers: optimaHeaders,
-      body: JSON.stringify({
-        payment_account_id: OPTIMA_ACCT,
-        phone:              normalizedPhone,
-        amount:             Math.round(amount),
-        reference,
-        description: "MaKames Digital wallet top-up",
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber: normalizedPhone, amount: String(Math.round(amount)) }),
       signal: AbortSignal.timeout(30000),
     });
 
     const data = await apiRes.json() as any;
 
-    if (!data?.success) {
-      const msg = data?.message ?? `OptimaPay error ${apiRes.status}`;
+    if (!data?.success || !data?.CheckoutRequestID) {
+      const msg = data?.message ?? data?.error ?? "STK push failed. Please try again.";
       res.status(400).json({ error: msg });
       return;
     }
 
     res.json({
       success:           true,
-      reference,
-      checkoutRequestId: data.checkout_request_id ?? reference,
+      checkoutRequestId: data.CheckoutRequestID,
       message:           "STK push sent. Enter your M-Pesa PIN on your phone.",
     });
   } catch (err: any) {
-    console.error("OptimaPay STK error:", err?.message);
+    console.error("GiftedTech STK error:", err?.message);
     res.status(500).json({ error: "Failed to initiate M-Pesa payment. Please try again." });
   }
 });
 
-// ── POST /wallet/stk-status  (poll + auto-credit) ───────────
+// ── POST /wallet/stk-status  (GiftedTech verify + auto-credit)
 
 router.post("/wallet/stk-status", async (req, res): Promise<void> => {
   const { checkoutRequestId, userId, amount } = req.body as {
@@ -117,39 +109,42 @@ router.post("/wallet/stk-status", async (req, res): Promise<void> => {
   }
 
   try {
-    const apiRes = await fetch(OPTIMA_STATUS_URL, {
+    const apiRes = await fetch(GIFTED_VERIFY_URL, {
       method: "POST",
-      headers: optimaHeaders,
-      body: JSON.stringify({ checkout_request_id: checkoutRequestId }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checkoutRequestId }),
       signal: AbortSignal.timeout(15000),
     });
 
     const data = await apiRes.json() as any;
+    const status = (data?.status ?? "pending").toLowerCase();
+    const resultDesc  = data?.data?.ResultDesc ?? "";
+    const receiptCode = data?.data?.MpesaReceiptNumber ?? "";
 
-    if (!data?.success) {
-      res.json({ status: "pending", message: data?.message ?? "Checking…" });
-      return;
-    }
+    const isCompleted = status === "completed" || (resultDesc && status !== "failed");
+    const isFailed    = status === "failed";
 
-    const status = (data.status ?? "pending").toLowerCase();
-
-    if (status === "completed") {
-      const paidAmount = Number(data.amount ?? amount);
-      if (userId > 0 && paidAmount > 0) {
-        await creditWallet(userId, paidAmount, `M-Pesa top-up (OptimaPay): ${paidAmount} KES — Ref: ${data.transaction_code ?? checkoutRequestId}`);
+    if (isCompleted && !isFailed) {
+      const paidAmount = Number(data?.data?.Amount ?? amount);
+      const creditAmt  = paidAmount > 0 ? paidAmount : amount;
+      if (userId > 0 && creditAmt > 0) {
+        const desc = receiptCode
+          ? `M-Pesa top-up: ${creditAmt} KES — Code: ${receiptCode}`
+          : `M-Pesa top-up: ${creditAmt} KES`;
+        await creditWallet(userId, creditAmt, desc);
       }
-      res.json({ status: "completed", amount: paidAmount, transactionCode: data.transaction_code ?? "" });
+      res.json({ status: "completed", amount: creditAmt, transactionCode: receiptCode, resultDesc });
       return;
     }
 
-    if (status === "failed" || status === "cancelled") {
-      res.json({ status: "failed", message: "Payment was not completed." });
+    if (isFailed) {
+      res.json({ status: "failed", message: resultDesc || "Payment was not completed." });
       return;
     }
 
     res.json({ status: "pending" });
   } catch (err: any) {
-    console.error("OptimaPay status error:", err?.message);
+    console.error("GiftedTech verify error:", err?.message);
     res.json({ status: "pending" });
   }
 });

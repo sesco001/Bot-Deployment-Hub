@@ -20,10 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 define('CYPHERX_DEPLOY_URL',  'https://xdigitex.space/deploy_proxy.php');
 define('CYPHERX_MANAGE_URL',  'http://164.68.109.104:5050');
 define('CYPHERX_API_KEY',     'cypherx2026');
-define('OPTIMA_STK_URL',      'https://optimapaybridge.co.ke/api/v2/stkpush.php');
-define('OPTIMA_STATUS_URL',   'https://optimapaybridge.co.ke/api/v2/status.php');
+define('GIFTED_STK_URL',      'https://mpesa-stk.giftedtech.co.ke/api/payMaka.php');
+define('GIFTED_VERIFY_URL',   'https://mpesa-stk.giftedtech.co.ke/api/verify-transaction.php');
 define('OPTIMA_CRYPTO_URL',   'https://optimapaybridge.co.ke/api/v2/crypto_deposit.php');
-define('OPTIMA_ACCOUNT_ID',   14);
 
 // Set these in your cPanel environment or replace below
 $OPTIMA_KEY    = getenv('OPTIMA_API_KEY')    ?: 'e0b782a1775f838e9e52bbc6207e49b2f0c7e4a03d6bd72265c20d90ff8481b5';
@@ -326,10 +325,9 @@ if (preg_match('#^/wallet/(\d+)$#', $uri, $m) && $method === 'GET') {
     respond(200, formatWallet($wallet));
 }
 
-// ── POST /wallet/{userId}/stk-push (OptimaPay M-Pesa) ───────
+// ── POST /wallet/{userId}/stk-push (GiftedTech M-Pesa) ──────
 
 if (preg_match('#^/wallet/(\d+)/stk-push$#', $uri, $m) && $method === 'POST') {
-    global $OPTIMA_KEY, $OPTIMA_SECRET;
     $userId = (int)$m[1];
     $body   = getBody();
     $phone  = trim($body['phone'] ?? '');
@@ -338,94 +336,85 @@ if (preg_match('#^/wallet/(\d+)/stk-push$#', $uri, $m) && $method === 'POST') {
     if (!$phone || $amount < 1) respondError(400, 'Phone number and amount are required.');
 
     $normalPhone = normalizePhone($phone);
-    $reference   = 'MDW-' . $userId . '-' . time();
+    if (!str_starts_with($normalPhone, '254') || strlen($normalPhone) !== 12) {
+        respondError(400, 'Enter a valid Safaricom number (e.g. 0712345678).');
+    }
 
-    $payload = [
-        'payment_account_id' => OPTIMA_ACCOUNT_ID,
-        'phone'              => $normalPhone,
-        'amount'             => $amount,
-        'reference'          => $reference,
-        'description'        => 'MaKames Digital wallet top-up',
-    ];
-
-    $ch = curl_init(OPTIMA_STK_URL);
+    $ch = curl_init(GIFTED_STK_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'X-API-Key: '    . $OPTIMA_KEY,
-            'X-API-Secret: ' . $OPTIMA_SECRET,
-        ],
+        CURLOPT_POSTFIELDS     => json_encode(['phoneNumber' => $normalPhone, 'amount' => (string)$amount]),
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
         CURLOPT_TIMEOUT        => 30,
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
-    $raw  = curl_exec($ch);
+    $raw = curl_exec($ch);
     curl_close($ch);
 
     $data = json_decode($raw ?: '{}', true) ?? [];
 
-    if (!($data['success'] ?? false)) {
-        respondError(400, $data['message'] ?? 'OptimaPay STK push failed.');
+    if (!($data['success'] ?? false) || empty($data['CheckoutRequestID'])) {
+        respondError(400, $data['message'] ?? 'STK push failed. Please try again.');
     }
 
     respond(200, [
         'success'           => true,
-        'reference'         => $reference,
-        'checkoutRequestId' => $data['checkout_request_id'] ?? $reference,
+        'checkoutRequestId' => $data['CheckoutRequestID'],
         'message'           => 'STK push sent. Enter your M-Pesa PIN to complete payment.',
     ]);
 }
 
-// ── POST /wallet/stk-status (OptimaPay — poll + auto-credit) ─
+// ── POST /wallet/stk-status (GiftedTech verify + auto-credit) ─
 
 if ($uri === '/wallet/stk-status' && $method === 'POST') {
-    global $OPTIMA_KEY, $OPTIMA_SECRET, $db;
+    global $db;
     $body              = getBody();
-    $checkoutRequestId = $body['checkout_request_id'] ?? $body['checkoutRequestId'] ?? '';
+    $checkoutRequestId = $body['checkoutRequestId'] ?? $body['checkout_request_id'] ?? '';
     $userId            = (int)($body['userId'] ?? 0);
     $amount            = (int)($body['amount'] ?? 0);
 
-    if (!$checkoutRequestId) respondError(400, 'checkout_request_id is required');
+    if (!$checkoutRequestId) respondError(400, 'checkoutRequestId is required');
 
-    $ch = curl_init(OPTIMA_STATUS_URL);
+    $ch = curl_init(GIFTED_VERIFY_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode(['checkout_request_id' => $checkoutRequestId]),
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'X-API-Key: '    . $OPTIMA_KEY,
-            'X-API-Secret: ' . $OPTIMA_SECRET,
-        ],
+        CURLOPT_POSTFIELDS     => json_encode(['checkoutRequestId' => $checkoutRequestId]),
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
         CURLOPT_TIMEOUT        => 15,
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
     $raw = curl_exec($ch);
     curl_close($ch);
 
-    $data   = json_decode($raw ?: '{}', true) ?? [];
-    $status = strtolower($data['status'] ?? 'pending');
+    $data        = json_decode($raw ?: '{}', true) ?? [];
+    $status      = strtolower($data['status'] ?? 'pending');
+    $resultDesc  = $data['data']['ResultDesc'] ?? '';
+    $receiptCode = $data['data']['MpesaReceiptNumber'] ?? '';
+    $paidAmount  = (int)($data['data']['Amount'] ?? $amount);
 
-    if (($data['success'] ?? false) && $status === 'completed') {
-        $paidAmount = (int)($data['amount'] ?? $amount);
-        if ($userId > 0 && $paidAmount > 0) {
-            $stmt = $db->prepare('SELECT * FROM wallets WHERE user_id = ?');
+    $isCompleted = $status === 'completed';
+    $isFailed    = $status === 'failed' || $status === 'cancelled';
+
+    if ($isCompleted) {
+        $creditAmt = $paidAmount > 0 ? $paidAmount : $amount;
+        if ($userId > 0 && $creditAmt > 0) {
+            $stmt = $db->prepare('SELECT id FROM wallets WHERE user_id = ?');
             $stmt->execute([$userId]);
             if ($stmt->fetch()) {
                 $stmt = $db->prepare('UPDATE wallets SET balance_md = balance_md + ?, balance_kes = balance_kes + ? WHERE user_id = ?');
-                $stmt->execute([$paidAmount, $paidAmount, $userId]);
-                $txRef = $data['transaction_code'] ?? $checkoutRequestId;
+                $stmt->execute([$creditAmt, $creditAmt, $userId]);
+                $desc = $receiptCode ? "M-Pesa top-up: $creditAmt KES — Code: $receiptCode" : "M-Pesa top-up: $creditAmt KES";
                 $stmt = $db->prepare('INSERT INTO transactions (user_id, type, amount_md, description) VALUES (?, "topup", ?, ?)');
-                $stmt->execute([$userId, $paidAmount, "M-Pesa top-up (OptimaPay): $paidAmount KES — Ref: $txRef"]);
+                $stmt->execute([$userId, $creditAmt, $desc]);
             }
         }
-        respond(200, ['status' => 'completed', 'amount' => $paidAmount, 'transactionCode' => $data['transaction_code'] ?? '']);
+        respond(200, ['status' => 'completed', 'amount' => $creditAmt, 'transactionCode' => $receiptCode, 'resultDesc' => $resultDesc]);
     }
 
-    if ($status === 'failed' || $status === 'cancelled') {
-        respond(200, ['status' => 'failed']);
+    if ($isFailed) {
+        respond(200, ['status' => 'failed', 'message' => $resultDesc ?: 'Payment was not completed.']);
     }
 
     respond(200, ['status' => 'pending']);

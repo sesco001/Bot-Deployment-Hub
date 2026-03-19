@@ -31,8 +31,8 @@ const METHOD_INFO: Record<PayMethod, { icon: typeof Smartphone; label: string; c
   international: { icon: Globe,      label: "Crypto (USDT)", color: "text-secondary" },
 };
 
-const POLL_INTERVAL_MS = 5000;
-const MAX_POLLS        = 24;
+const POLL_INTERVAL_MS = 3000;
+const MAX_POLLS        = 60;
 
 export default function WalletPage() {
   const { user }    = useAuth();
@@ -48,9 +48,10 @@ export default function WalletPage() {
   const [amount,  setAmount]  = useState(100);
   const [phone,   setPhone]   = useState("");
   const [stkState, setStkState] = useState<StkState>("idle");
-  const [payRef,  setPayRef]  = useState("");
-  const [checkoutId, setCheckoutId] = useState("");
-  const [pollCount,  setPollCount]  = useState(0);
+  const [payRef,       setPayRef]       = useState("");
+  const [checkoutId,   setCheckoutId]   = useState("");
+  const [pollCount,    setPollCount]    = useState(0);
+  const [receiptCode,  setReceiptCode]  = useState("");
   const [cryptoLoading, setCryptoLoading] = useState(false);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,6 +64,7 @@ export default function WalletPage() {
     setPayRef("");
     setCheckoutId("");
     setPollCount(0);
+    setReceiptCode("");
     setCryptoLoading(false);
     setMethod("mpesa");
   };
@@ -82,13 +84,14 @@ export default function WalletPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ checkoutRequestId: cid, userId, amount }),
       });
-      const data = await res.json() as { status: string; amount?: number; transactionCode?: string; message?: string };
+      const data = await res.json() as { status: string; amount?: number; transactionCode?: string; resultDesc?: string; message?: string };
 
       if (data.status === "completed") {
         setStkState("success");
+        if (data.transactionCode) setReceiptCode(data.transactionCode);
         queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey(userId) });
         queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey(userId) });
-        toast({ title: "Payment Confirmed!", description: `KES ${data.amount ?? amount} has been added to your wallet.` });
+        toast({ title: "Payment Confirmed!", description: `KES ${data.amount ?? amount} added to your wallet.` });
         return;
       }
 
@@ -248,17 +251,15 @@ export default function WalletPage() {
           <p id="wallet-dialog-desc" className="sr-only">Top up your wallet using M-Pesa or Crypto (USDT)</p>
 
           {stkState === "success" ? (
-            <SuccessScreen amount={amount} onClose={() => { setIsOpen(false); resetDialog(); }} />
+            <SuccessScreen amount={amount} receiptCode={receiptCode} onClose={() => { setIsOpen(false); resetDialog(); }} />
           ) : stkState === "failed" ? (
             <FailedScreen onRetry={() => setStkState("idle")} />
           ) : isPollingOrSending || stkState === "idle" && checkoutId ? (
             <PollingScreen
               phone={phone}
               amount={amount}
-              payRef={payRef}
               pollCount={pollCount}
               maxPolls={MAX_POLLS}
-              stkState={stkState}
               onCancel={() => { stopPolling(); resetDialog(); }}
             />
           ) : (
@@ -357,12 +358,13 @@ export default function WalletPage() {
   );
 }
 
-function PollingScreen({ phone, amount, payRef, pollCount, maxPolls, stkState, onCancel }: {
-  phone: string; amount: number; payRef: string;
-  pollCount: number; maxPolls: number; stkState: StkState;
+function PollingScreen({ phone, amount, pollCount, maxPolls, onCancel }: {
+  phone: string; amount: number;
+  pollCount: number; maxPolls: number;
   onCancel: () => void;
 }) {
-  const elapsed = Math.round((pollCount * 5));
+  const elapsed = Math.round(pollCount * (POLL_INTERVAL_MS / 1000));
+  const total   = Math.round(maxPolls * (POLL_INTERVAL_MS / 1000));
   return (
     <div className="mt-4 flex flex-col items-center text-center gap-5">
       <div className="w-20 h-20 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center">
@@ -376,20 +378,15 @@ function PollingScreen({ phone, amount, payRef, pollCount, maxPolls, stkState, o
       <div className="w-full bg-background rounded-xl border border-border p-3 space-y-2">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Auto-detecting payment…</span>
-          <span>{elapsed}s / {Math.round(maxPolls * 5)}s</span>
+          <span>{elapsed}s / {total}s</span>
         </div>
         <div className="w-full bg-white/5 rounded-full h-1.5">
           <div
-            className="h-1.5 rounded-full bg-green-500 transition-all duration-500"
+            className="h-1.5 rounded-full bg-green-500 transition-all duration-300"
             style={{ width: `${Math.min((pollCount / maxPolls) * 100, 100)}%` }}
           />
         </div>
       </div>
-      {payRef && (
-        <p className="text-xs text-muted-foreground font-mono bg-white/5 px-3 py-2 rounded-lg w-full text-center truncate">
-          Ref: {payRef}
-        </p>
-      )}
       <button onClick={onCancel} className="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted-foreground font-medium text-sm">
         Cancel
       </button>
@@ -397,7 +394,7 @@ function PollingScreen({ phone, amount, payRef, pollCount, maxPolls, stkState, o
   );
 }
 
-function SuccessScreen({ amount, onClose }: { amount: number; onClose: () => void }) {
+function SuccessScreen({ amount, receiptCode, onClose }: { amount: number; receiptCode?: string; onClose: () => void }) {
   return (
     <div className="mt-4 flex flex-col items-center text-center gap-5">
       <div className="w-20 h-20 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center">
@@ -407,6 +404,11 @@ function SuccessScreen({ amount, onClose }: { amount: number; onClose: () => voi
         <h3 className="text-xl font-bold text-white mb-1">Payment Confirmed!</h3>
         <p className="text-muted-foreground">KES {amount} has been added to your wallet as <span className="text-primary font-bold">{amount} MD Coins</span>.</p>
       </div>
+      {receiptCode && (
+        <p className="text-xs text-muted-foreground font-mono bg-white/5 px-3 py-2 rounded-lg w-full text-center">
+          M-Pesa Code: <span className="text-green-400 font-bold">{receiptCode}</span>
+        </p>
+      )}
       <button onClick={onClose} className="w-full py-3.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold">
         Done
       </button>
