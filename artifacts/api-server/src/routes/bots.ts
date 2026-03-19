@@ -14,30 +14,43 @@ import { BOT_TYPES, DEPLOY_DAYS } from "../lib/botTypes.js";
 
 const router: IRouter = Router();
 
-// ── Digitex Gateway (unified for all 4 bot types) ────────────
-const DIGITEX_URL     = "https://api.xdigitex.space/v1/deploy.php";
-const DIGITEX_AUTH    = "dx_a6c2ecc10696f578614d5b79abfff621";
-const CYPHERX_MANAGE_URL = "http://164.68.109.104:5050";
+// ── Digitex Gateway ──────────────────────────────────────────
+// Base: https://api.xdigitex.space/deploy.php  (no /v1/ prefix)
+const DIGITEX_URL  = "https://api.xdigitex.space/deploy.php";
+const DIGITEX_AUTH = "dx_a6c2ecc10696f578614d5b79abfff621";
 
-async function deployViaDigitex(payload: Record<string, string>): Promise<{ botId: string }> {
+async function digitexRequest(payload: Record<string, string>, timeoutMs = 65000): Promise<any> {
   const res = await fetch(DIGITEX_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-AUTH-KEY": DIGITEX_AUTH },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(65000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  const text = await res.text().catch(() => "");
-  if (!res.ok) throw new Error(`Digitex API ${res.status}: ${text}`);
+  const text = await res.text().catch(() => "{}");
   let data: any = {};
   try { data = JSON.parse(text); } catch {}
-  if (data?.status === "error") throw new Error(`Digitex error: ${data?.message ?? text}`);
+  // Digitex returns {"error":"..."} on failure
+  if (data?.error) throw new Error(String(data.error));
+  if (!res.ok)     throw new Error(`Digitex HTTP ${res.status}`);
+  return data;
+}
+
+async function deployViaDigitex(payload: Record<string, string>): Promise<{ botId: string }> {
+  const data = await digitexRequest(payload);
   return { botId: String(data?.vps_id ?? "unknown") };
 }
 
+async function statusViaDigitex(vpsId: string): Promise<any> {
+  return digitexRequest({ action: "status", vps_id: vpsId }, 20000);
+}
+
+async function logsViaDigitex(vpsId: string): Promise<any> {
+  return digitexRequest({ action: "logs", vps_id: vpsId }, 20000);
+}
+
 async function manageCypherX(action: "restart" | "stop" | "delete", botId: string) {
-  const method = action === "delete" ? "DELETE" : "POST";
-  await fetch(`${CYPHERX_MANAGE_URL}/${action}/${botId}`, {
-    method,
+  await fetch(`http://164.68.109.104:5050/${action}/${botId}`, {
+    method: action === "delete" ? "DELETE" : "POST",
     headers: { "Auth-Key": "254MANAGER" },
     signal: AbortSignal.timeout(15000),
   }).catch(() => {});
@@ -174,6 +187,47 @@ router.get("/bots/deployments/:deploymentId", async (req, res): Promise<void> =>
   const rows = await db.select().from(botDeploymentsTable).where(eq(botDeploymentsTable.id, params.data.deploymentId));
   if (rows.length === 0) { res.status(404).json({ error: "Deployment not found" }); return; }
   res.json(rows[0]);
+});
+
+// ── GET /bots/deployments/:deploymentId/status ───────────────
+router.get("/bots/deployments/:deploymentId/status", async (req, res): Promise<void> => {
+  const rows = await db.select().from(botDeploymentsTable).where(eq(botDeploymentsTable.id, req.params.deploymentId));
+  if (rows.length === 0) { res.status(404).json({ error: "Deployment not found" }); return; }
+  const dep = rows[0];
+  if (!dep.apiKey) {
+    res.json({ vps_id: null, status: dep.status, message: "Bot not yet deployed on VPS" });
+    return;
+  }
+  try {
+    const data = await statusViaDigitex(dep.apiKey);
+    // Sync DB status if VPS reports a definitive state
+    const vpsStatus: string = (data?.status ?? "").toLowerCase();
+    if (vpsStatus === "running" && dep.status !== "running") {
+      await db.update(botDeploymentsTable).set({ status: "running" }).where(eq(botDeploymentsTable.id, dep.id));
+    } else if ((vpsStatus === "stopped" || vpsStatus === "exited") && dep.status !== "stopped") {
+      await db.update(botDeploymentsTable).set({ status: "stopped" }).where(eq(botDeploymentsTable.id, dep.id));
+    }
+    res.json({ vps_id: dep.apiKey, ...data });
+  } catch (err: any) {
+    res.json({ vps_id: dep.apiKey, status: dep.status, vps_error: err.message });
+  }
+});
+
+// ── GET /bots/deployments/:deploymentId/logs ─────────────────
+router.get("/bots/deployments/:deploymentId/logs", async (req, res): Promise<void> => {
+  const rows = await db.select().from(botDeploymentsTable).where(eq(botDeploymentsTable.id, req.params.deploymentId));
+  if (rows.length === 0) { res.status(404).json({ error: "Deployment not found" }); return; }
+  const dep = rows[0];
+  if (!dep.apiKey) {
+    res.json({ vps_id: null, logs: "", message: "Bot not yet deployed — no VPS logs available" });
+    return;
+  }
+  try {
+    const data = await logsViaDigitex(dep.apiKey);
+    res.json({ vps_id: dep.apiKey, logs: data?.logs ?? data?.output ?? JSON.stringify(data) });
+  } catch (err: any) {
+    res.json({ vps_id: dep.apiKey, logs: "", vps_error: err.message });
+  }
 });
 
 // ── PATCH /bots/deployments/:deploymentId ────────────────────

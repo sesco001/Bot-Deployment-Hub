@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ─── Config ─────────────────────────────────────────────────
 
-define('DIGITEX_URL',         'https://api.xdigitex.space/v1/deploy.php');
+define('DIGITEX_URL',         'https://api.xdigitex.space/deploy.php');
 define('DIGITEX_AUTH',        'dx_a6c2ecc10696f578614d5b79abfff621');
 define('CYPHERX_MANAGE_URL',  'http://164.68.109.104:5050');
 define('GIFTED_STK_URL',      'https://mpesa-stk.giftedtech.co.ke/api/payMaka.php');
@@ -83,14 +83,39 @@ function httpPost(string $url, array $data, array $headers = []): array {
     return ['status' => $status, 'body' => $decoded, 'raw' => $body];
 }
 
+function digitexRequest(array $payload, int $timeout = 65): array {
+    $ch = curl_init(DIGITEX_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload),
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'X-AUTH-KEY: ' . DIGITEX_AUTH],
+        CURLOPT_TIMEOUT        => $timeout,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $body   = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $decoded = json_decode($body ?: '{}', true) ?? [];
+    return ['status' => $status, 'body' => $decoded];
+}
+
 function deployViaDigitex(array $payload): ?string {
-    $result = httpPost(DIGITEX_URL, $payload, ['X-AUTH-KEY: ' . DIGITEX_AUTH]);
-    if ($result['status'] === 200 || $result['status'] === 201) {
-        $b = $result['body'];
-        if (($b['status'] ?? '') === 'error') return null;
-        return (string)($b['vps_id'] ?? 'unknown');
-    }
-    return null;
+    $result = digitexRequest($payload);
+    $b = $result['body'];
+    if (isset($b['error'])) return null; // e.g. "Insufficient Balance"
+    if ($result['status'] < 200 || $result['status'] > 299) return null;
+    return (string)($b['vps_id'] ?? 'unknown');
+}
+
+function statusViaDigitex(string $vpsId): array {
+    $result = digitexRequest(['action' => 'status', 'vps_id' => $vpsId], 20);
+    return $result['body'];
+}
+
+function logsViaDigitex(string $vpsId): array {
+    $result = digitexRequest(['action' => 'logs', 'vps_id' => $vpsId], 20);
+    return $result['body'];
 }
 
 function manageCypherX(string $action, string $botId): void {
@@ -696,6 +721,50 @@ if (preg_match('#^/bots/deployments/(\d+)$#', $uri, $m) && $method === 'DELETE')
     if ($stmt->rowCount() === 0) respondError(404, 'Deployment not found');
     http_response_code(204);
     exit;
+}
+
+// ── GET /bots/deployments/{id}/status ───────────────────────
+
+if (preg_match('#^/bots/deployments/(\d+)/status$#', $uri, $m) && $method === 'GET') {
+    $id   = (int)$m[1];
+    $stmt = $db->prepare('SELECT * FROM bot_deployments WHERE id = ?');
+    $stmt->execute([$id]);
+    $dep = $stmt->fetch();
+    if (!$dep) respondError(404, 'Deployment not found');
+
+    if (!$dep['api_key']) {
+        respond(200, ['vps_id' => null, 'status' => $dep['status'], 'message' => 'Bot not yet deployed on VPS']);
+    }
+
+    $data = statusViaDigitex($dep['api_key']);
+
+    // Sync DB status
+    $vpsStatus = strtolower($data['status'] ?? '');
+    if ($vpsStatus === 'running' && $dep['status'] !== 'running') {
+        $db->prepare("UPDATE bot_deployments SET status='running' WHERE id=?")->execute([$id]);
+    } elseif (in_array($vpsStatus, ['stopped','exited']) && $dep['status'] !== 'stopped') {
+        $db->prepare("UPDATE bot_deployments SET status='stopped' WHERE id=?")->execute([$id]);
+    }
+
+    respond(200, array_merge(['vps_id' => $dep['api_key']], $data));
+}
+
+// ── GET /bots/deployments/{id}/logs ─────────────────────────
+
+if (preg_match('#^/bots/deployments/(\d+)/logs$#', $uri, $m) && $method === 'GET') {
+    $id   = (int)$m[1];
+    $stmt = $db->prepare('SELECT * FROM bot_deployments WHERE id = ?');
+    $stmt->execute([$id]);
+    $dep = $stmt->fetch();
+    if (!$dep) respondError(404, 'Deployment not found');
+
+    if (!$dep['api_key']) {
+        respond(200, ['vps_id' => null, 'logs' => '', 'message' => 'Bot not yet deployed — no VPS logs available']);
+    }
+
+    $data = logsViaDigitex($dep['api_key']);
+    $logs = $data['logs'] ?? $data['output'] ?? json_encode($data);
+    respond(200, ['vps_id' => $dep['api_key'], 'logs' => $logs]);
 }
 
 // ── POST /bots/deployments/{id}/restart ─────────────────────
