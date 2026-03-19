@@ -122,10 +122,12 @@ router.post("/wallet/stk-status", async (req, res): Promise<void> => {
     const resultDesc  = data?.data?.ResultDesc ?? "";
     const receiptCode = data?.data?.MpesaReceiptNumber ?? "";
 
-    const isCompleted = status === "completed" || (resultDesc && status !== "failed");
-    const isFailed    = status === "failed";
+    // Only credit on EXACT "completed" status — "cancelled", "failed", or any other
+    // status must NEVER credit the wallet, even if ResultDesc is non-empty.
+    const isCompleted = status === "completed";
+    const isFailed    = status === "failed" || status === "cancelled" || status === "canceled";
 
-    if (isCompleted && !isFailed) {
+    if (isCompleted) {
       const paidAmount = Number(data?.data?.Amount ?? amount);
       const creditAmt  = paidAmount > 0 ? paidAmount : amount;
       if (userId > 0 && creditAmt > 0) {
@@ -139,7 +141,7 @@ router.post("/wallet/stk-status", async (req, res): Promise<void> => {
     }
 
     if (isFailed) {
-      res.json({ status: "failed", message: resultDesc || "Payment was not completed." });
+      res.json({ status: "failed", message: resultDesc || "Payment was cancelled or not completed." });
       return;
     }
 

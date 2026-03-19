@@ -394,8 +394,9 @@ if ($uri === '/wallet/stk-status' && $method === 'POST') {
     $receiptCode = $data['data']['MpesaReceiptNumber'] ?? '';
     $paidAmount  = (int)($data['data']['Amount'] ?? $amount);
 
+    // Only credit on EXACT 'completed' — never credit on 'cancelled', 'failed', or anything else
     $isCompleted = $status === 'completed';
-    $isFailed    = $status === 'failed' || $status === 'cancelled';
+    $isFailed    = $status === 'failed' || $status === 'cancelled' || $status === 'canceled';
 
     if ($isCompleted) {
         $creditAmt = $paidAmount > 0 ? $paidAmount : $amount;
@@ -414,7 +415,7 @@ if ($uri === '/wallet/stk-status' && $method === 'POST') {
     }
 
     if ($isFailed) {
-        respond(200, ['status' => 'failed', 'message' => $resultDesc ?: 'Payment was not completed.']);
+        respond(200, ['status' => 'failed', 'message' => $resultDesc ?: 'Payment was cancelled or not completed.']);
     }
 
     respond(200, ['status' => 'pending']);
