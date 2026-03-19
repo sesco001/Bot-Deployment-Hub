@@ -16,6 +16,7 @@ import MyBots from "@/pages/MyBots";
 import Boost from "@/pages/Boost";
 import International from "@/pages/International";
 import Referrals from "@/pages/Referrals";
+import Admin from "@/pages/Admin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/boost"><ProtectedRoute component={Boost} /></Route>
       <Route path="/international"><ProtectedRoute component={International} /></Route>
       <Route path="/referrals"><ProtectedRoute component={Referrals} /></Route>
+      <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
 
       <Route component={NotFound} />
     </Switch>

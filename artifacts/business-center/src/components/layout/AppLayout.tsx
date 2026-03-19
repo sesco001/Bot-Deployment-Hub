@@ -3,7 +3,7 @@ import { Link, useLocation } from 'wouter';
 import { useAuth } from '@/lib/auth';
 import { 
   LayoutDashboard, Wallet, Bot, Server, 
-  TrendingUp, Globe, Users, LogOut, Menu, X 
+  TrendingUp, Globe, Users, LogOut, Menu, X, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -18,10 +18,14 @@ const NAV_ITEMS = [
   { path: '/referrals', label: 'Referrals', icon: Users },
 ];
 
+const ADMIN_NAV = { path: '/admin', label: 'Admin Panel', icon: ShieldCheck };
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isAdmin = localStorage.getItem("mkm_admin_key") === "makames_admin_2026";
+  const allNavItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV] : NAV_ITEMS;
 
   return (
     <div className="min-h-screen bg-background flex text-foreground">
@@ -35,7 +39,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 px-4 space-y-1 overflow-y-auto py-4">
-          {NAV_ITEMS.map((item) => {
+          {allNavItems.map((item) => {
             const isActive = location === item.path;
             return (
               <Link key={item.path} href={item.path} className={cn(
@@ -102,7 +106,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             className="lg:hidden fixed inset-0 z-40 bg-background/95 backdrop-blur-3xl pt-20 pb-6 px-4 flex flex-col"
           >
             <nav className="flex-1 space-y-2 overflow-y-auto">
-              {NAV_ITEMS.map((item) => (
+              {allNavItems.map((item) => (
                 <Link 
                   key={item.path} 
                   href={item.path}
