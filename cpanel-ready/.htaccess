@@ -1,0 +1,13 @@
+Options -Indexes
+RewriteEngine On
+
+# Block access to config directory
+RewriteRule ^config/ - [F,L]
+
+# Route all /api/* requests to the PHP API router
+RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+
+# React SPA: send all non-file, non-directory requests to index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]
