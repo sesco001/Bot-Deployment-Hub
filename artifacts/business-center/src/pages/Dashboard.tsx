@@ -2,7 +2,7 @@ import { useAuth } from "@/lib/auth";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetWallet, useListDeployments, useGetReferrals } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/utils";
-import { Wallet, Server, Users, ArrowUpRight, Plus, Activity } from "lucide-react";
+import { Wallet, Server, Users, ArrowUpRight, Plus, Activity, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
 import { motion } from "framer-motion";
 
