@@ -17,13 +17,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ─── Config ─────────────────────────────────────────────────
 
-define('CYPHERX_DEPLOY_URL', 'https://xdigitex.space/deploy_proxy.php');
-define('CYPHERX_MANAGE_URL', 'http://164.68.109.104:5050');
-define('CYPHERX_API_KEY',    'cypherx2026');
-define('PAYHERO_CHANNEL_ID', 5962);
+define('CYPHERX_DEPLOY_URL',  'https://xdigitex.space/deploy_proxy.php');
+define('CYPHERX_MANAGE_URL',  'http://164.68.109.104:5050');
+define('CYPHERX_API_KEY',     'cypherx2026');
+define('OPTIMA_STK_URL',      'https://optimapaybridge.co.ke/api/v2/stkpush.php');
+define('OPTIMA_STATUS_URL',   'https://optimapaybridge.co.ke/api/v2/status.php');
+define('OPTIMA_CRYPTO_URL',   'https://optimapaybridge.co.ke/api/v2/crypto_deposit.php');
+define('OPTIMA_ACCOUNT_ID',   14);
 
-// Set PAYHERO_AUTH_TOKEN in your environment or replace the string below
-$PAYHERO_AUTH = getenv('PAYHERO_AUTH_TOKEN') ?: 'Basic cnN6d3ZSaDBCUGN5WkZTOHlJZkI6RWdCSXFPM3V0T0RvQk01NXJsMFJNNk52QVBCSE41WHJaOERqZndJOQ==';
+// Set these in your cPanel environment or replace below
+$OPTIMA_KEY    = getenv('OPTIMA_API_KEY')    ?: 'e0b782a1775f838e9e52';
+$OPTIMA_SECRET = getenv('OPTIMA_API_SECRET') ?: 'bbf27739b3ccd4bd6da0f3ecdb7c6baa64842136073fa13c97c95e2fcb14f84f';
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -322,90 +326,147 @@ if (preg_match('#^/wallet/(\d+)$#', $uri, $m) && $method === 'GET') {
     respond(200, formatWallet($wallet));
 }
 
-// ── POST /wallet/{userId}/stk-push (PayHero M-Pesa) ─────────
+// ── POST /wallet/{userId}/stk-push (OptimaPay M-Pesa) ───────
 
 if (preg_match('#^/wallet/(\d+)/stk-push$#', $uri, $m) && $method === 'POST') {
-    global $PAYHERO_AUTH;
+    global $OPTIMA_KEY, $OPTIMA_SECRET;
     $userId = (int)$m[1];
     $body   = getBody();
     $phone  = trim($body['phone'] ?? '');
     $amount = (int)($body['amount'] ?? 0);
 
-    if (!$phone || $amount < 10) respondError(400, 'Phone number and amount (min 10 KES) are required.');
+    if (!$phone || $amount < 1) respondError(400, 'Phone number and amount are required.');
 
     $normalPhone = normalizePhone($phone);
-    $reference   = 'MD-' . $userId . '-' . time();
-
-    $domain      = $_SERVER['HTTP_HOST'] ?? '';
-    $callbackUrl = $domain ? "https://$domain/api/wallet/payhero-callback" : 'https://makamesdigital.replit.app/api/wallet/payhero-callback';
+    $reference   = 'MDW-' . $userId . '-' . time();
 
     $payload = [
+        'payment_account_id' => OPTIMA_ACCOUNT_ID,
+        'phone'              => $normalPhone,
         'amount'             => $amount,
-        'phone_number'       => $normalPhone,
-        'channel_id'         => PAYHERO_CHANNEL_ID,
-        'provider'           => 'm-pesa',
-        'external_reference' => $reference,
-        'callback_url'       => $callbackUrl,
+        'reference'          => $reference,
+        'description'        => 'MaKames Digital wallet top-up',
     ];
 
-    $ch = curl_init('https://backend.payhero.co.ke/api/v2/payments');
+    $ch = curl_init(OPTIMA_STK_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($payload),
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
-            'Authorization: ' . $PAYHERO_AUTH,
+            'X-API-Key: '    . $OPTIMA_KEY,
+            'X-API-Secret: ' . $OPTIMA_SECRET,
         ],
         CURLOPT_TIMEOUT        => 30,
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
-    $raw    = curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $raw  = curl_exec($ch);
     curl_close($ch);
 
     $data = json_decode($raw ?: '{}', true) ?? [];
 
-    if ($status < 200 || $status >= 300) {
-        $msg = $data['message'] ?? $data['error'] ?? "PayHero error $status";
-        respondError(400, $msg);
+    if (!($data['success'] ?? false)) {
+        respondError(400, $data['message'] ?? 'OptimaPay STK push failed.');
     }
 
     respond(200, [
         'success'           => true,
         'reference'         => $reference,
-        'checkoutRequestId' => $data['CheckoutRequestID'] ?? $data['checkout_request_id'] ?? $reference,
-        'message'           => 'STK push sent. Enter PIN on your phone to complete payment.',
+        'checkoutRequestId' => $data['checkout_request_id'] ?? $reference,
+        'message'           => 'STK push sent. Enter your M-Pesa PIN to complete payment.',
     ]);
 }
 
-// ── POST /wallet/payhero-callback ───────────────────────────
+// ── POST /wallet/stk-status (OptimaPay — poll + auto-credit) ─
 
-if ($uri === '/wallet/payhero-callback' && $method === 'POST') {
-    $body      = getBody();
-    $status    = $body['Status'] ?? $body['status'] ?? '';
-    $reference = $body['ExternalReference'] ?? $body['external_reference'] ?? '';
-    $amount    = (int)($body['Amount'] ?? $body['amount'] ?? 0);
+if ($uri === '/wallet/stk-status' && $method === 'POST') {
+    global $OPTIMA_KEY, $OPTIMA_SECRET, $db;
+    $body              = getBody();
+    $checkoutRequestId = $body['checkout_request_id'] ?? $body['checkoutRequestId'] ?? '';
+    $userId            = (int)($body['userId'] ?? 0);
+    $amount            = (int)($body['amount'] ?? 0);
 
-    $isSuccess = in_array(strtolower($status), ['success', 'complete', 'completed'], true);
+    if (!$checkoutRequestId) respondError(400, 'checkout_request_id is required');
 
-    if ($isSuccess && $reference && $amount > 0) {
-        $parts  = explode('-', $reference);
-        $userId = (int)($parts[1] ?? 0);
-        if ($userId > 0) {
+    $ch = curl_init(OPTIMA_STATUS_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode(['checkout_request_id' => $checkoutRequestId]),
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'X-API-Key: '    . $OPTIMA_KEY,
+            'X-API-Secret: ' . $OPTIMA_SECRET,
+        ],
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $raw = curl_exec($ch);
+    curl_close($ch);
+
+    $data   = json_decode($raw ?: '{}', true) ?? [];
+    $status = strtolower($data['status'] ?? 'pending');
+
+    if (($data['success'] ?? false) && $status === 'completed') {
+        $paidAmount = (int)($data['amount'] ?? $amount);
+        if ($userId > 0 && $paidAmount > 0) {
             $stmt = $db->prepare('SELECT * FROM wallets WHERE user_id = ?');
             $stmt->execute([$userId]);
-            $wallet = $stmt->fetch();
-            if ($wallet) {
+            if ($stmt->fetch()) {
                 $stmt = $db->prepare('UPDATE wallets SET balance_md = balance_md + ?, balance_kes = balance_kes + ? WHERE user_id = ?');
-                $stmt->execute([$amount, $amount, $userId]);
+                $stmt->execute([$paidAmount, $paidAmount, $userId]);
+                $txRef = $data['transaction_code'] ?? $checkoutRequestId;
                 $stmt = $db->prepare('INSERT INTO transactions (user_id, type, amount_md, description) VALUES (?, "topup", ?, ?)');
-                $stmt->execute([$userId, $amount, "M-Pesa top-up (PayHero): $amount KES"]);
+                $stmt->execute([$userId, $paidAmount, "M-Pesa top-up (OptimaPay): $paidAmount KES — Ref: $txRef"]);
             }
         }
+        respond(200, ['status' => 'completed', 'amount' => $paidAmount, 'transactionCode' => $data['transaction_code'] ?? '']);
     }
 
-    respond(200, ['status' => 'received']);
+    if ($status === 'failed' || $status === 'cancelled') {
+        respond(200, ['status' => 'failed']);
+    }
+
+    respond(200, ['status' => 'pending']);
+}
+
+// ── POST /wallet/{userId}/crypto-checkout (OptimaPay USDT) ───
+
+if (preg_match('#^/wallet/(\d+)/crypto-checkout$#', $uri, $m) && $method === 'POST') {
+    global $OPTIMA_KEY, $OPTIMA_SECRET;
+    $userId    = (int)$m[1];
+    $body      = getBody();
+    $amountUsd = (float)($body['amountUsd'] ?? 0);
+
+    if ($amountUsd < 1) respondError(400, 'Minimum $1 USD required.');
+
+    $ch = curl_init(OPTIMA_CRYPTO_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode([
+            'amount'   => $amountUsd,
+            'order_id' => 'MDW-CRYPTO-' . $userId . '-' . time(),
+        ]),
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'X-API-KEY: '    . $OPTIMA_KEY,
+            'X-API-SECRET: ' . $OPTIMA_SECRET,
+        ],
+        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $raw = curl_exec($ch);
+    curl_close($ch);
+
+    $data = json_decode($raw ?: '{}', true) ?? [];
+
+    if (!($data['success'] ?? false)) {
+        respondError(400, $data['message'] ?? 'Crypto checkout failed.');
+    }
+
+    respond(200, ['success' => true, 'checkoutUrl' => $data['checkout_url']]);
 }
 
 // ── POST /wallet/{userId}/topup (manual/card/international) ─

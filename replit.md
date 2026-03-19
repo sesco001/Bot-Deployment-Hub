@@ -58,8 +58,16 @@ artifacts-monorepo/
 - Each user gets a unique referral code on registration
 - Referral tracking with referrer/referred relationship
 
-### International Payments
-- Coming soon section with Visa, Mastercard, PayPal, Crypto placeholders
+### M-Pesa Payments (OptimaPay)
+- STK push via `POST /api/wallet/:userId/stk-push` → OptimaPay `stkpush.php`
+- Auto-polling every 5s via `POST /api/wallet/stk-status` → OptimaPay `status.php`
+- On `completed`, wallet is auto-credited (no webhook needed)
+- Credentials: `OPTIMA_API_KEY`, `OPTIMA_API_SECRET` secrets; `OPTIMA_ACCOUNT_ID=14` env var
+
+### International / Crypto Payments (OptimaPay USDT TRC20)
+- `POST /api/wallet/:userId/crypto-checkout` → OptimaPay `crypto_deposit.php`
+- Returns `checkoutUrl`; frontend opens in new tab
+- KES amount converted to USD at ≈130 KES/USD estimate
 
 ## Database Schema
 
@@ -76,7 +84,10 @@ All routes under `/api`:
 - `POST /users/login` - Login
 - `GET /users/:userId` - Get user profile
 - `GET /wallet/:userId` - Get wallet balance
-- `POST /wallet/:userId/topup` - Add coins
+- `POST /wallet/:userId/stk-push` - Initiate M-Pesa STK push (OptimaPay)
+- `POST /wallet/stk-status` - Poll OptimaPay payment status + auto-credit wallet
+- `POST /wallet/:userId/crypto-checkout` - Create USDT TRC20 checkout (OptimaPay)
+- `POST /wallet/:userId/topup` - Manual top-up (card/other)
 - `GET /wallet/:userId/transactions` - Get transaction history
 - `GET /bots` - List available bot types
 - `GET /bots/deployments?userId=X` - List user's deployments

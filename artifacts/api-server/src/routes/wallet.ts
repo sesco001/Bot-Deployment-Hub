@@ -10,15 +10,19 @@ import {
 
 const router: IRouter = Router();
 
-const PAYHERO_AUTH_TOKEN = process.env["PAYHERO_AUTH_TOKEN"] || "";
-const PAYHERO_CHANNEL_ID = Number(process.env["PAYHERO_CHANNEL_ID"] || "5962");
-const PAYHERO_URL = "https://backend.payhero.co.ke/api/v2/payments";
+const OPTIMA_KEY    = process.env["OPTIMA_API_KEY"]    ?? "";
+const OPTIMA_SECRET = process.env["OPTIMA_API_SECRET"] ?? "";
+const OPTIMA_ACCT   = Number(process.env["OPTIMA_ACCOUNT_ID"] ?? "14");
 
-function getCallbackUrl(): string {
-  const domain = process.env["REPLIT_DOMAINS"]?.split(",")[0] ?? "";
-  if (domain) return `https://${domain}/api/wallet/payhero-callback`;
-  return "https://makamesdigital.replit.app/api/wallet/payhero-callback";
-}
+const OPTIMA_STK_URL    = "https://optimapaybridge.co.ke/api/v2/stkpush.php";
+const OPTIMA_STATUS_URL = "https://optimapaybridge.co.ke/api/v2/status.php";
+const OPTIMA_CRYPTO_URL = "https://optimapaybridge.co.ke/api/v2/crypto_deposit.php";
+
+const optimaHeaders = {
+  "Content-Type":  "application/json",
+  "X-API-Key":     OPTIMA_KEY,
+  "X-API-Secret":  OPTIMA_SECRET,
+};
 
 function normalizePhone(phone: string): string {
   const cleaned = phone.replace(/\D/g, "");
@@ -27,137 +31,185 @@ function normalizePhone(phone: string): string {
   return cleaned;
 }
 
+async function creditWallet(userId: number, amount: number, description: string) {
+  const wallets = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
+  if (wallets.length === 0) return;
+  const wallet = wallets[0];
+  await db
+    .update(walletsTable)
+    .set({ balanceMd: wallet.balanceMd + amount, balanceKes: wallet.balanceKes + amount })
+    .where(eq(walletsTable.userId, userId));
+  await db.insert(transactionsTable).values({ userId, type: "topup", amountMd: amount, description });
+}
+
+// ── GET /wallet/:userId ──────────────────────────────────────
+
 router.get("/wallet/:userId", async (req, res): Promise<void> => {
   const params = GetWalletParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const wallets = await db.select().from(walletsTable).where(eq(walletsTable.userId, params.data.userId));
-  if (wallets.length === 0) {
-    res.status(404).json({ error: "Wallet not found" });
-    return;
-  }
-
+  if (wallets.length === 0) { res.status(404).json({ error: "Wallet not found" }); return; }
   res.json(wallets[0]);
 });
 
+// ── POST /wallet/:userId/stk-push  (OptimaPay M-Pesa) ───────
+
 router.post("/wallet/:userId/stk-push", async (req, res): Promise<void> => {
   const params = GetWalletParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const { phone, amount } = req.body as { phone: string; amount: number };
-
-  if (!phone || !amount || amount < 10) {
-    res.status(400).json({ error: "Phone number and amount (min 10 KES) are required." });
+  if (!phone || !amount || amount < 1) {
+    res.status(400).json({ error: "Phone number and amount (min 1 KES) are required." });
     return;
   }
 
   const normalizedPhone = normalizePhone(String(phone));
-  const reference = `MD-${params.data.userId}-${Date.now()}`;
-
-  const payload = {
-    amount: Math.round(amount),
-    phone_number: normalizedPhone,
-    channel_id: PAYHERO_CHANNEL_ID,
-    provider: "m-pesa",
-    external_reference: reference,
-    callback_url: getCallbackUrl(),
-  };
+  const reference = `MDW-${params.data.userId}-${Date.now()}`;
 
   try {
-    const phRes = await fetch(PAYHERO_URL, {
+    const apiRes = await fetch(OPTIMA_STK_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: PAYHERO_AUTH_TOKEN,
-      },
-      body: JSON.stringify(payload),
+      headers: optimaHeaders,
+      body: JSON.stringify({
+        payment_account_id: OPTIMA_ACCT,
+        phone:              normalizedPhone,
+        amount:             Math.round(amount),
+        reference,
+        description: "MaKames Digital wallet top-up",
+      }),
       signal: AbortSignal.timeout(30000),
     });
 
-    const data = await phRes.json() as any;
+    const data = await apiRes.json() as any;
 
-    if (!phRes.ok) {
-      const msg = data?.message ?? data?.error ?? `PayHero error ${phRes.status}`;
+    if (!data?.success) {
+      const msg = data?.message ?? `OptimaPay error ${apiRes.status}`;
       res.status(400).json({ error: msg });
       return;
     }
 
     res.json({
-      success: true,
+      success:           true,
       reference,
-      checkoutRequestId: data?.CheckoutRequestID ?? data?.checkout_request_id ?? reference,
-      message: "STK push sent. Enter PIN on your phone to complete payment.",
+      checkoutRequestId: data.checkout_request_id ?? reference,
+      message:           "STK push sent. Enter your M-Pesa PIN on your phone.",
     });
   } catch (err: any) {
-    console.error("PayHero STK error:", err?.message);
+    console.error("OptimaPay STK error:", err?.message);
     res.status(500).json({ error: "Failed to initiate M-Pesa payment. Please try again." });
   }
 });
 
-router.post("/wallet/payhero-callback", async (req, res): Promise<void> => {
+// ── POST /wallet/stk-status  (poll + auto-credit) ───────────
+
+router.post("/wallet/stk-status", async (req, res): Promise<void> => {
+  const { checkoutRequestId, userId, amount } = req.body as {
+    checkoutRequestId: string;
+    userId: number;
+    amount: number;
+  };
+
+  if (!checkoutRequestId) {
+    res.status(400).json({ error: "checkoutRequestId is required" });
+    return;
+  }
+
   try {
-    const body = req.body as any;
-    const status = body?.Status ?? body?.status ?? "";
-    const reference = body?.ExternalReference ?? body?.external_reference ?? "";
+    const apiRes = await fetch(OPTIMA_STATUS_URL, {
+      method: "POST",
+      headers: optimaHeaders,
+      body: JSON.stringify({ checkout_request_id: checkoutRequestId }),
+      signal: AbortSignal.timeout(15000),
+    });
 
-    if ((status === "Success" || status === "success" || status === "COMPLETE") && reference) {
-      const parts = reference.split("-");
-      const userId = parseInt(parts[1] ?? "0", 10);
-      const amount = Number(body?.Amount ?? body?.amount ?? 0);
+    const data = await apiRes.json() as any;
 
-      if (userId > 0 && amount > 0) {
-        const wallets = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
-        if (wallets.length > 0) {
-          const wallet = wallets[0];
-          await db
-            .update(walletsTable)
-            .set({ balanceMd: wallet.balanceMd + amount, balanceKes: wallet.balanceKes + amount })
-            .where(eq(walletsTable.userId, userId));
-
-          await db.insert(transactionsTable).values({
-            userId,
-            type: "topup",
-            amountMd: amount,
-            description: `M-Pesa top-up (PayHero): ${amount} KES`,
-          });
-        }
-      }
+    if (!data?.success) {
+      res.json({ status: "pending", message: data?.message ?? "Checking…" });
+      return;
     }
 
-    res.json({ status: "received" });
+    const status = (data.status ?? "pending").toLowerCase();
+
+    if (status === "completed") {
+      const paidAmount = Number(data.amount ?? amount);
+      if (userId > 0 && paidAmount > 0) {
+        await creditWallet(userId, paidAmount, `M-Pesa top-up (OptimaPay): ${paidAmount} KES — Ref: ${data.transaction_code ?? checkoutRequestId}`);
+      }
+      res.json({ status: "completed", amount: paidAmount, transactionCode: data.transaction_code ?? "" });
+      return;
+    }
+
+    if (status === "failed" || status === "cancelled") {
+      res.json({ status: "failed", message: "Payment was not completed." });
+      return;
+    }
+
+    res.json({ status: "pending" });
   } catch (err: any) {
-    console.error("PayHero callback error:", err?.message);
-    res.json({ status: "received" });
+    console.error("OptimaPay status error:", err?.message);
+    res.json({ status: "pending" });
   }
 });
 
+// ── POST /wallet/:userId/crypto-checkout  (USDT TRC20) ──────
+
+router.post("/wallet/:userId/crypto-checkout", async (req, res): Promise<void> => {
+  const params = GetWalletParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const { amountUsd } = req.body as { amountUsd: number };
+  if (!amountUsd || amountUsd < 1) {
+    res.status(400).json({ error: "Minimum $1 USD required." });
+    return;
+  }
+
+  try {
+    const apiRes = await fetch(OPTIMA_CRYPTO_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-KEY":    OPTIMA_KEY,
+        "X-API-SECRET": OPTIMA_SECRET,
+      },
+      body: JSON.stringify({
+        amount:   amountUsd,
+        order_id: `MDW-CRYPTO-${params.data.userId}-${Date.now()}`,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    const data = await apiRes.json() as any;
+
+    if (!data?.success) {
+      const msg = data?.message ?? "Crypto checkout failed.";
+      res.status(400).json({ error: msg });
+      return;
+    }
+
+    res.json({ success: true, checkoutUrl: data.checkout_url });
+  } catch (err: any) {
+    console.error("OptimaPay crypto error:", err?.message);
+    res.status(500).json({ error: "Failed to create crypto checkout. Please try again." });
+  }
+});
+
+// ── POST /wallet/:userId/topup  (card / manual) ──────────────
+
 router.post("/wallet/:userId/topup", async (req, res): Promise<void> => {
   const params = TopUpWalletParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const parsed = TopUpWalletBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { amountKes } = parsed.data;
+  const { amountKes, paymentMethod } = parsed.data;
   const amountMd = amountKes;
 
   const wallets = await db.select().from(walletsTable).where(eq(walletsTable.userId, params.data.userId));
-  if (wallets.length === 0) {
-    res.status(404).json({ error: "Wallet not found" });
-    return;
-  }
+  if (wallets.length === 0) { res.status(404).json({ error: "Wallet not found" }); return; }
 
   const wallet = wallets[0];
   const [updated] = await db
@@ -170,18 +222,17 @@ router.post("/wallet/:userId/topup", async (req, res): Promise<void> => {
     userId: params.data.userId,
     type: "topup",
     amountMd,
-    description: `Top-up via ${parsed.data.paymentMethod}: ${amountKes} KES`,
+    description: `Top-up via ${paymentMethod}: ${amountKes} KES`,
   });
 
   res.json(updated);
 });
 
+// ── GET /wallet/:userId/transactions ─────────────────────────
+
 router.get("/wallet/:userId/transactions", async (req, res): Promise<void> => {
   const params = GetTransactionsParams.safeParse(req.params);
-  if (!params.success) {
-    res.status(400).json({ error: params.error.message });
-    return;
-  }
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const transactions = await db
     .select()
