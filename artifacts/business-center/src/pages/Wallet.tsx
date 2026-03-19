@@ -146,23 +146,33 @@ export default function WalletPage() {
     }
   };
 
+  const OPTIMA_RATE = 128; // 1 USD = 128 KES (OptimaPay fixed settlement rate)
+
   const handleCryptoCheckout = async () => {
     if (amount < 1) {
       toast({ variant: "destructive", title: "Invalid amount", description: "Enter an amount first." });
       return;
     }
-    const usd = Math.ceil(amount / 130);
+    const usd = parseFloat((amount / OPTIMA_RATE).toFixed(2));
+    const usdMin = Math.max(usd, 1.00); // OptimaPay minimum is $1
     setCryptoLoading(true);
     try {
       const res  = await fetch(`/api/wallet/${userId}/crypto-checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountUsd: usd }),
+        body: JSON.stringify({ amountUsd: usdMin }),
       });
       const data = await res.json() as { success?: boolean; checkoutUrl?: string; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Crypto checkout failed");
+      if (!res.ok) {
+        const errMsg = data.error ?? "Crypto checkout failed";
+        throw new Error(
+          errMsg.includes("500")
+            ? "Crypto gateway is temporarily unavailable. Please contact support or use M-Pesa."
+            : errMsg
+        );
+      }
       window.open(data.checkoutUrl, "_blank", "noopener,noreferrer");
-      toast({ title: "Checkout Opened", description: "Complete your USDT payment in the new tab." });
+      toast({ title: "Checkout Opened", description: "Complete your USDT TRC20 payment in the new tab." });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Crypto Error", description: err.message });
     } finally {
@@ -329,7 +339,7 @@ export default function WalletPage() {
                     <Bitcoin className="w-4 h-4" /> USDT via TRON (TRC20) only
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Estimated: <span className="text-white font-mono">≈ ${Math.ceil(amount / 130)} USD</span> for KES {amount}.
+                    Estimated: <span className="text-white font-mono">≈ ${Math.max(parseFloat((amount / 128).toFixed(2)), 1).toFixed(2)} USD</span> for KES {amount} (rate: 128 KES/USD).
                   </p>
                   <p className="text-xs text-yellow-400/80">
                     ⚠ Only send USDT on the TRON (TRC20) network. Other networks will result in permanent loss of funds.
