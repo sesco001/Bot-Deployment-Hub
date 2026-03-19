@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, botDeploymentsTable, walletsTable, transactionsTable, usersTable } from "@workspace/db";
 import {
   ListDeploymentsQueryParams,
@@ -13,6 +13,42 @@ import {
 import { BOT_TYPES } from "../lib/botTypes.js";
 
 const router: IRouter = Router();
+
+const CYPHERX_DEPLOY_URL = process.env["CYPHERX_DEPLOY_URL"] || "https://xdigitex.space/deploy_proxy.php";
+const CYPHERX_MANAGE_URL = process.env["CYPHERX_MANAGE_URL"] || "http://164.68.109.104:5050";
+const CYPHERX_API_KEY = process.env["CYPHERX_API_KEY"] || "cypherx2026";
+
+async function deployCypherX(sessionId: string, ownerNumber: string): Promise<{ containerId: string }> {
+  const res = await fetch(CYPHERX_DEPLOY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": CYPHERX_API_KEY },
+    body: JSON.stringify({
+      repo_url: "https://github.com/Dark-Xploit/CypherX",
+      env: { SESSION_ID: sessionId, OWNER_NUMBER: ownerNumber },
+    }),
+    signal: AbortSignal.timeout(65000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`CypherX API error ${res.status}: ${text}`);
+  }
+
+  const data = await res.json() as any;
+  const containerId: string =
+    data?.deployment?.id ?? data?.container_id ?? data?.id ?? "unknown";
+  return { containerId };
+}
+
+async function manageCypherX(action: "restart" | "stop" | "delete", botId: string) {
+  const methodMap = { restart: "POST", stop: "POST", delete: "DELETE" } as const;
+  const method = methodMap[action];
+  await fetch(`${CYPHERX_MANAGE_URL}/${action}/${botId}`, {
+    method,
+    headers: { "Auth-Key": "254MANAGER" },
+    signal: AbortSignal.timeout(15000),
+  });
+}
 
 router.get("/bots", async (_req, res): Promise<void> => {
   res.json(BOT_TYPES);
@@ -64,17 +100,11 @@ router.post("/bots/deployments", async (req, res): Promise<void> => {
   let expiresAt: Date | null = null;
 
   if (useFreeDeployment && user.freeDeployDaysLeft > 0) {
-    // Use free deployment days
     isFreeDeployment = true;
     expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + user.freeDeployDaysLeft);
-
-    await db
-      .update(usersTable)
-      .set({ freeDeployDaysLeft: 0 })
-      .where(eq(usersTable.id, userId));
+    await db.update(usersTable).set({ freeDeployDaysLeft: 0 }).where(eq(usersTable.id, userId));
   } else {
-    // Deduct from wallet
     const wallets = await db.select().from(walletsTable).where(eq(walletsTable.userId, userId));
     if (wallets.length === 0) {
       res.status(400).json({ error: "Wallet not found" });
@@ -83,19 +113,17 @@ router.post("/bots/deployments", async (req, res): Promise<void> => {
 
     const wallet = wallets[0];
     if (wallet.balanceMd < botType.costMd) {
-      res.status(400).json({ error: `Insufficient balance. You need ${botType.costMd} MDs but have ${wallet.balanceMd} MDs.` });
+      res.status(400).json({
+        error: `Insufficient balance. You need ${botType.costMd} MDs but have ${wallet.balanceMd} MDs.`,
+      });
       return;
     }
 
     await db
       .update(walletsTable)
-      .set({
-        balanceMd: wallet.balanceMd - botType.costMd,
-        balanceKes: wallet.balanceKes - botType.costMd,
-      })
+      .set({ balanceMd: wallet.balanceMd - botType.costMd, balanceKes: wallet.balanceKes - botType.costMd })
       .where(eq(walletsTable.userId, userId));
 
-    // Record transaction
     await db.insert(transactionsTable).values({
       userId,
       type: "deduction",
@@ -104,12 +132,34 @@ router.post("/bots/deployments", async (req, res): Promise<void> => {
     });
   }
 
+  let externalContainerId: string | null = null;
+  let deployStatus: "running" | "stopped" | "pending" = "running";
+
+  if (botTypeId === "cypher-x") {
+    let parsedConfig: Record<string, string> = {};
+    try {
+      parsedConfig = config ? JSON.parse(config) : {};
+    } catch {}
+
+    const sessionId = parsedConfig["SESSION_ID"] ?? "";
+    const ownerNumber = parsedConfig["OWNER_NUMBER"] ?? "";
+
+    try {
+      const result = await deployCypherX(sessionId, ownerNumber);
+      externalContainerId = result.containerId;
+      deployStatus = "running";
+    } catch (err: any) {
+      console.error("CypherX deploy error:", err?.message);
+      deployStatus = "pending";
+    }
+  }
+
   const [deployment] = await db.insert(botDeploymentsTable).values({
     userId,
     botTypeId,
     botName,
-    status: "running",
-    apiKey: apiKey ?? null,
+    status: deployStatus,
+    apiKey: externalContainerId ?? apiKey ?? null,
     config: config ?? null,
     isFreeDeployment,
     expiresAt,
@@ -178,15 +228,22 @@ router.delete("/bots/deployments/:deploymentId", async (req, res): Promise<void>
     return;
   }
 
-  const [deployment] = await db
-    .delete(botDeploymentsTable)
-    .where(eq(botDeploymentsTable.id, params.data.deploymentId))
-    .returning();
+  const deployments = await db
+    .select()
+    .from(botDeploymentsTable)
+    .where(eq(botDeploymentsTable.id, params.data.deploymentId));
 
-  if (!deployment) {
+  if (deployments.length === 0) {
     res.status(404).json({ error: "Deployment not found" });
     return;
   }
+
+  const dep = deployments[0];
+  if (dep.botTypeId === "cypher-x" && dep.apiKey) {
+    manageCypherX("delete", dep.apiKey).catch(() => {});
+  }
+
+  await db.delete(botDeploymentsTable).where(eq(botDeploymentsTable.id, params.data.deploymentId));
 
   res.sendStatus(204);
 });
@@ -198,16 +255,26 @@ router.post("/bots/deployments/:deploymentId/restart", async (req, res): Promise
     return;
   }
 
+  const deployments = await db
+    .select()
+    .from(botDeploymentsTable)
+    .where(eq(botDeploymentsTable.id, params.data.deploymentId));
+
+  if (deployments.length === 0) {
+    res.status(404).json({ error: "Deployment not found" });
+    return;
+  }
+
+  const dep = deployments[0];
+  if (dep.botTypeId === "cypher-x" && dep.apiKey) {
+    manageCypherX("restart", dep.apiKey).catch(() => {});
+  }
+
   const [deployment] = await db
     .update(botDeploymentsTable)
     .set({ status: "running" })
     .where(eq(botDeploymentsTable.id, params.data.deploymentId))
     .returning();
-
-  if (!deployment) {
-    res.status(404).json({ error: "Deployment not found" });
-    return;
-  }
 
   res.json(deployment);
 });
