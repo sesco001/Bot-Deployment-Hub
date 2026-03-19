@@ -26,7 +26,7 @@ define('OPTIMA_CRYPTO_URL',   'https://optimapaybridge.co.ke/api/v2/crypto_depos
 define('OPTIMA_ACCOUNT_ID',   14);
 
 // Set these in your cPanel environment or replace below
-$OPTIMA_KEY    = getenv('OPTIMA_API_KEY')    ?: 'e0b782a1775f838e9e52';
+$OPTIMA_KEY    = getenv('OPTIMA_API_KEY')    ?: 'e0b782a1775f838e9e52bbc6207e49b2f0c7e4a03d6bd72265c20d90ff8481b5';
 $OPTIMA_SECRET = getenv('OPTIMA_API_SECRET') ?: 'bbf27739b3ccd4bd6da0f3ecdb7c6baa64842136073fa13c97c95e2fcb14f84f';
 
 // ─── Helpers ────────────────────────────────────────────────
