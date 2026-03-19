@@ -31,4 +31,4 @@ timeoutMs = 20000
 CYPHERX_DEPLOY_URL = "https://xdigitex.space/deploy_proxy.php"
 CYPHERX_MANAGE_URL = "http://164.68.109.104:5050"
 CYPHERX_API_KEY = "cypherx2026"
-PAYHERO_CHANNEL_ID = "5962"
+OPTIMA_ACCOUNT_ID = "14"

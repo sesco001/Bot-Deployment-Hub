@@ -1,0 +1,161 @@
+<?php
+// =========================
+// OptimaPay STK Push Demo
+// =========================
+// - Users enter phone + amount in a form
+// - System sends STK Push using OptimaPay API
+// - Tracks payment automatically in real-time
+// =========================
+
+// ==== API CREDENTIALS ====
+// (replace these with your real OptimaPay keys)
+$apiKey    = "7390a54c44bcb9cb692f6c861562ff6f3b424094bef993d3434e692b17e02c46";
+$apiSecret = "882e5a38596b0fd6cfd8f9631592e4290ca4f441a2be5990ec34d778974985c4";
+$accountId = 17;
+
+// ==== FUNCTIONS ====
+
+// Function to send STK Push
+function initiatePayment($apiKey, $apiSecret, $accountId, $phone, $amount, $reference, $description) {
+    $url = "https://optimapaybridge.co.ke/api/v2/stkpush.php";
+
+    $data = [
+        'payment_account_id' => $accountId,
+        'phone'              => $phone,
+        'amount'             => $amount,
+        'reference'          => $reference,
+        'description'        => $description
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'X-API-Key: '    . $apiKey,
+        'X-API-Secret: ' . $apiSecret,
+        'Content-Type: application/json'
+    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    return json_decode($response, true);
+}
+
+// Function to check payment status
+function checkPaymentStatus($apiKey, $apiSecret, $checkoutRequestId) {
+    $url = "https://optimapaybridge.co.ke/api/v2/status.php";
+
+    $data = ['checkout_request_id' => $checkoutRequestId];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'X-API-Key: '    . $apiKey,
+        'X-API-Secret: ' . $apiSecret,
+        'Content-Type: application/json'
+    ]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    return json_decode($response, true);
+}
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OptimaPay STK Push Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; background:#f4f4f4; }
+        .container { max-width:500px; margin:50px auto; background:#fff; padding:20px; border-radius:10px; box-OptimaPay:0 0 10px rgba(0,0,0,0.1); }
+        h2 { text-align:center; color:#333; }
+        label { font-weight:bold; display:block; margin-top:10px; }
+        input[type="text"], input[type="number"] { width:100%; padding:10px; margin-top:5px; border:1px solid #ccc; border-radius:5px; }
+        button { margin-top:15px; padding:12px; background:#28a745; color:white; border:none; border-radius:5px; width:100%; font-size:16px; cursor:pointer; }
+        button:hover { background:#218838; }
+        .status-box { margin-top:20px; padding:15px; border-radius:8px; background:#f9f9f9; font-family:monospace; }
+        .success { color:green; }
+        .error { color:red; }
+        .pending { color:orange; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>💳 OptimaPay STK Push</h2>
+    <form method="POST">
+        <label>Phone Number (format: 2547XXXXXXXX)</label>
+        <input type="text" name="phone" required placeholder="e.g. 254712345678">
+
+        <label>Amount (KES)</label>
+        <input type="number" name="amount" required placeholder="e.g. 100">
+
+        <button type="submit" name="pay">Send STK Push</button>
+    </form>
+
+<?php
+// ==== WHEN USER SUBMITS FORM ====
+if (isset($_POST['pay'])) {
+    $phone  = $_POST['phone'];
+    $amount = $_POST['amount'];
+    $reference   = "ORDER" . rand(1000,9999); // unique ref
+    $description = "Payment via OptimaPay API";
+
+    echo "<div class='status-box'>";
+    echo "<p>📡 Sending STK Push to <b>$phone</b> for <b>KES $amount</b>...</p>";
+
+    $result = initiatePayment($apiKey, $apiSecret, $accountId, $phone, $amount, $reference, $description);
+
+    if (!$result['success']) {
+        echo "<p class='error'>❌ Error: " . $result['message'] . "</p>";
+        echo "</div>";
+    } else {
+        $checkoutRequestId = $result['checkout_request_id'];
+        echo "<p class='success'>✅ STK Push sent successfully!</p>";
+        echo "<p>Checkout Request ID: <b>$checkoutRequestId</b></p>";
+        echo "<hr><p>🔍 Tracking payment status...</p>";
+
+        // Auto-poll status
+        $maxAttempts = 24; // 2 minutes
+        $attempt = 0;
+
+        while ($attempt < $maxAttempts) {
+            $status = checkPaymentStatus($apiKey, $apiSecret, $checkoutRequestId);
+
+            if ($status['success']) {
+                $paymentStatus = $status['status'];
+
+                echo "<p class='pending'>⏳ Attempt " . ($attempt + 1) . ": Status = <b>$paymentStatus</b></p>";
+                flush();
+
+                if ($paymentStatus === "completed") {
+                    echo "<p class='success'>🎉 Payment Completed!</p>";
+                    echo "<p>Transaction Code: <b>" . $status['transaction_code'] . "</b></p>";
+                    break;
+                } elseif ($paymentStatus === "failed") {
+                    echo "<p class='error'>❌ Payment Failed.</p>";
+                    break;
+                }
+            } else {
+                echo "<p class='error'>⚠️ API Error: " . $status['message'] . "</p>";
+                break;
+            }
+
+            $attempt++;
+            sleep(5);
+        }
+
+        if ($attempt >= $maxAttempts) {
+            echo "<p class='error'>⌛ Payment status check timed out.</p>";
+        }
+
+        echo "</div>";
+    }
+}
+?>
+</div>
+</body>
+</html>
