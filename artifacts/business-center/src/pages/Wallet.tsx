@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAuth } from "@/lib/auth";
-import { useGetWallet, useGetTransactions, useTopUpWallet } from "@workspace/api-client-react";
+import { useGetWallet, useGetTransactions } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import {
@@ -12,7 +12,6 @@ import {
   RefreshCcw,
   Loader2,
   Smartphone,
-  CreditCard,
   Globe,
   CheckCircle2,
   XCircle,
@@ -24,13 +23,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetWalletQueryKey, getGetTransactionsQueryKey } from "@workspace/api-client-react";
 
-type PayMethod = "mpesa" | "card" | "international";
+type PayMethod = "mpesa" | "international";
 type StkState = "idle" | "sending" | "polling" | "success" | "failed";
 
 const METHOD_INFO: Record<PayMethod, { icon: typeof Smartphone; label: string; color: string }> = {
-  mpesa:         { icon: Smartphone,  label: "M-Pesa",        color: "text-green-400" },
-  card:          { icon: CreditCard,  label: "Card",          color: "text-primary" },
-  international: { icon: Globe,       label: "Crypto (USDT)", color: "text-secondary" },
+  mpesa:         { icon: Smartphone, label: "M-Pesa",        color: "text-green-400" },
+  international: { icon: Globe,      label: "Crypto (USDT)", color: "text-secondary" },
 };
 
 const POLL_INTERVAL_MS = 5000;
@@ -56,21 +54,6 @@ export default function WalletPage() {
   const [cryptoLoading, setCryptoLoading] = useState(false);
 
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const topupMutation = useTopUpWallet({
-    mutation: {
-      onSuccess: () => {
-        toast({ title: "Top-up Successful", description: "Your wallet has been credited." });
-        queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey(userId) });
-        queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey(userId) });
-        setIsOpen(false);
-        resetDialog();
-      },
-      onError: (err: any) => {
-        toast({ variant: "destructive", title: "Top-up Failed", description: err.message });
-      },
-    },
-  });
 
   const resetDialog = () => {
     if (pollTimer.current) clearTimeout(pollTimer.current);
@@ -354,24 +337,16 @@ export default function WalletPage() {
               )}
 
               <button
-                onClick={
-                  method === "mpesa"
-                    ? handleMpesaSTK
-                    : method === "international"
-                    ? handleCryptoCheckout
-                    : () => topupMutation.mutate({ userId, data: { amountKes: amount, paymentMethod: method, paymentReference: undefined } })
-                }
-                disabled={isPollingOrSending || topupMutation.isPending || cryptoLoading}
+                onClick={method === "mpesa" ? handleMpesaSTK : handleCryptoCheckout}
+                disabled={isPollingOrSending || cryptoLoading}
                 className="w-full py-3.5 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 flex justify-center items-center gap-2 disabled:opacity-50"
               >
-                {(isPollingOrSending || topupMutation.isPending || cryptoLoading) ? (
+                {(isPollingOrSending || cryptoLoading) ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : method === "mpesa" ? (
                   "Send M-Pesa Prompt"
-                ) : method === "international" ? (
-                  <span className="flex items-center gap-2">Open Crypto Checkout <ExternalLink className="w-4 h-4" /></span>
                 ) : (
-                  "Process Payment"
+                  <span className="flex items-center gap-2">Open Crypto Checkout <ExternalLink className="w-4 h-4" /></span>
                 )}
               </button>
             </div>
