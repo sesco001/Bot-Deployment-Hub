@@ -245,7 +245,7 @@ export default function WalletPage() {
           <DialogHeader>
             <DialogTitle className="text-xl font-display">Add Funds</DialogTitle>
           </DialogHeader>
-          <p id="wallet-dialog-desc" className="sr-only">Top up your wallet using M-Pesa, Card, or Crypto</p>
+          <p id="wallet-dialog-desc" className="sr-only">Top up your wallet using M-Pesa or Crypto (USDT)</p>
 
           {stkState === "success" ? (
             <SuccessScreen amount={amount} onClose={() => { setIsOpen(false); resetDialog(); }} />
@@ -283,8 +283,8 @@ export default function WalletPage() {
 
               <div className="space-y-3">
                 <label className="text-sm font-medium text-white">Payment Method</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["mpesa", "card", "international"] as PayMethod[]).map((m) => {
+                <div className="grid grid-cols-2 gap-2">
+                  {(["mpesa", "international"] as PayMethod[]).map((m) => {
                     const info = METHOD_INFO[m];
                     return (
                       <button
