@@ -162,6 +162,49 @@ function formatDeployment(array $d): array {
 
 // ─── Bot Types ──────────────────────────────────────────────
 
+define('DEPLOY_DAYS', 36);
+
+function deployKingMD(string $ownerNumber, string $session, string $countryCode): ?string {
+    $result = httpPost('https://king.xcasper.site/deploy', [
+        'owner_number' => $ownerNumber,
+        'session'      => $session,
+        'code'         => $countryCode,
+    ], ['x-api-key: kingmd254']);
+    if ($result['status'] === 200 || $result['status'] === 201) {
+        $b = $result['body'];
+        return (string)($b['id'] ?? $b['deployment_id'] ?? 'unknown');
+    }
+    return null;
+}
+
+function deployBWM(string $botName, string $ownerNumber, string $session): ?string {
+    $url = 'http://173.249.50.158:8443/deploy?key=bwm2542026&bot_name=' . urlencode($botName);
+    $result = httpPost($url, ['bot_name' => $botName, 'owner_number' => $ownerNumber, 'session' => $session]);
+    if ($result['status'] === 200 || $result['status'] === 201) {
+        $b = $result['body'];
+        return (string)($b['id'] ?? $b['deployment_id'] ?? $botName);
+    }
+    return null;
+}
+
+function deployAtassa(string $botName, string $sessionId): ?string {
+    $port   = rand(5001, 9999);
+    $result = httpPost('https://atassa.xcasper.site/deploy?key=atassa2026', [
+        'bot_name'   => $botName,
+        'session_id' => $sessionId,
+        'port'       => $port,
+    ]);
+    if ($result['status'] === 200 || $result['status'] === 201) {
+        $b = $result['body'];
+        return (string)($b['container_id'] ?? $b['id'] ?? $botName);
+    }
+    return null;
+}
+
+function safeBotName(string $name, int $userId): string {
+    return strtolower(preg_replace('/[^a-z0-9]/i', '', $name)) . '_' . $userId . '_' . time();
+}
+
 function getBotTypes(): array {
     return [
         [
@@ -169,49 +212,60 @@ function getBotTypes(): array {
             'name'        => 'Cypher X',
             'description' => 'The most advanced WhatsApp bot — powered by live VPS deployment. Supports AI replies, group management, media tools, and much more.',
             'costMd'      => 30,
+            'deployDays'  => DEPLOY_DAYS,
+            'badge'       => 'Live VPS',
             'apiEndpoint' => '/api/bots/cypher-x',
-            'features'    => ['Live VPS deployment', 'AI-powered auto replies', 'Group management & anti-delete', 'Media downloads & stickers', 'Custom commands', 'Multi-owner support'],
+            'features'    => ['Live VPS deployment — 36 days nonstop', 'AI-powered auto replies', 'Group management & anti-delete', 'Media downloads & stickers', 'Custom commands', 'Multi-owner support'],
             'isActive'    => true,
             'envFields'   => [
-                ['key' => 'SESSION_ID',    'label' => 'WhatsApp Session ID',  'placeholder' => 'Paste your session string here...', 'required' => true,  'isSecret' => true,  'helpLink' => 'https://xdigitex.space'],
-                ['key' => 'OWNER_NUMBER',  'label' => 'Owner Phone Number',   'placeholder' => 'e.g. 254712345678',                 'required' => true,  'isSecret' => false],
+                ['key' => 'SESSION_ID',   'label' => 'WhatsApp Session ID', 'placeholder' => 'Paste your session string here...', 'required' => true,  'isSecret' => true,  'helpLink' => 'https://xdigitex.space'],
+                ['key' => 'OWNER_NUMBER', 'label' => 'Owner Phone Number',  'placeholder' => 'e.g. 254712345678',                 'required' => true,  'isSecret' => false],
             ],
         ],
         [
             'id'          => 'king-md',
             'name'        => 'King MD Bot',
-            'description' => 'The flagship WhatsApp/Telegram bot with advanced automation, AI replies, and multi-platform support.',
+            'description' => 'Specialized WhatsApp MD bot with country code support. Advanced automation, AI replies, and rock-solid group management for power users.',
             'costMd'      => 30,
+            'deployDays'  => DEPLOY_DAYS,
+            'badge'       => 'Live VPS',
             'apiEndpoint' => '/api/bots/king-md',
-            'features'    => ['AI-powered auto replies', 'Multi-platform support', 'Group management', 'Media downloads', 'Custom commands', 'Admin controls'],
+            'features'    => ['Live VPS deployment — 36 days nonstop', 'AI-powered auto replies', 'Country code support', 'Group management', 'Media downloads', 'Admin controls'],
             'isActive'    => true,
+            'envFields'   => [
+                ['key' => 'OWNER_NUMBER', 'label' => 'Owner Phone Number (with country code)', 'placeholder' => 'e.g. 254712345678', 'required' => true,  'isSecret' => false],
+                ['key' => 'SESSION_ID',   'label' => 'King MD Session String',                'placeholder' => 'KING_SESSION_HERE', 'required' => true,  'isSecret' => true],
+                ['key' => 'COUNTRY_CODE', 'label' => 'Country Code',                          'placeholder' => 'e.g. 254',          'required' => true,  'isSecret' => false],
+            ],
         ],
         [
-            'id'          => 'social-bot',
-            'name'        => 'Social Media Bot',
-            'description' => 'Automate your social media presence with scheduled posts, engagement tools, and analytics.',
+            'id'          => 'bwm-xmd-go',
+            'name'        => 'BWM-XMD-GO',
+            'description' => 'High-performance Go-based WhatsApp bot with blazing fast container deployment. Built for reliability and speed on dedicated infrastructure.',
             'costMd'      => 50,
-            'apiEndpoint' => '/api/bots/social-bot',
-            'features'    => ['Scheduled posting', 'Auto engagement', 'Cross-platform support', 'Analytics dashboard', 'Hashtag automation', 'DM automation'],
+            'deployDays'  => DEPLOY_DAYS,
+            'badge'       => 'Live VPS',
+            'apiEndpoint' => '/api/bots/bwm-xmd-go',
+            'features'    => ['Live VPS deployment — 36 days nonstop', 'Go-powered high performance', 'Real-time log streaming', 'Auto media handling', 'Group & sticker tools', 'Fast boot time'],
             'isActive'    => true,
+            'envFields'   => [
+                ['key' => 'OWNER_NUMBER', 'label' => 'Owner Phone Number',  'placeholder' => 'e.g. 254710000000', 'required' => true,  'isSecret' => false],
+                ['key' => 'SESSION_ID',   'label' => 'BWM Session ID',      'placeholder' => 'BWM_SESSION_HERE',  'required' => true,  'isSecret' => true],
+            ],
         ],
         [
-            'id'          => 'ecommerce-bot',
-            'name'        => 'E-Commerce Bot',
-            'description' => 'Handle customer inquiries, orders, and payments automatically.',
+            'id'          => 'atassa-cloud',
+            'name'        => 'Atassa Cloud',
+            'description' => 'Secure cloud-hosted WhatsApp bot with automated port allocation and encrypted deployment. Ideal for group admins and business automation.',
             'costMd'      => 50,
-            'apiEndpoint' => '/api/bots/ecommerce-bot',
-            'features'    => ['Order management', 'Payment integration', 'Inventory alerts', 'Customer support', 'Product catalog', 'Auto invoicing'],
+            'deployDays'  => DEPLOY_DAYS,
+            'badge'       => 'Live VPS',
+            'apiEndpoint' => '/api/bots/atassa-cloud',
+            'features'    => ['Live VPS deployment — 36 days nonstop', 'Auto port allocation', 'Encrypted secure containers', 'Live console log streaming', 'Group automation', 'Always-on uptime'],
             'isActive'    => true,
-        ],
-        [
-            'id'          => 'crypto-bot',
-            'name'        => 'Crypto Trading Bot',
-            'description' => 'Monitor cryptocurrency markets and automate trading strategies.',
-            'costMd'      => 50,
-            'apiEndpoint' => '/api/bots/crypto-bot',
-            'features'    => ['Real-time price alerts', 'Trading signals', 'Portfolio tracking', 'Multi-exchange support', 'Risk management', 'PnL reports'],
-            'isActive'    => false,
+            'envFields'   => [
+                ['key' => 'SESSION_ID', 'label' => 'Atassa Session ID', 'placeholder' => 'Atassa~...', 'required' => true, 'isSecret' => true],
+            ],
         ],
     ];
 }
@@ -552,13 +606,12 @@ if ($uri === '/bots/deployments' && $method === 'POST') {
     if (!$user) respondError(404, 'User not found');
 
     $isFreeDeployment = false;
-    $expiresAt        = null;
+    // All deployments always expire in 36 days
+    $expiresAt = date('Y-m-d H:i:s', strtotime('+' . DEPLOY_DAYS . ' days'));
 
     if ($useFreeDeployment && (int)$user['free_deploy_days_left'] > 0) {
         $isFreeDeployment = true;
-        $days      = (int)$user['free_deploy_days_left'];
-        $expiresAt = date('Y-m-d H:i:s', strtotime("+$days days"));
-        $stmt      = $db->prepare('UPDATE users SET free_deploy_days_left = 0 WHERE id = ?');
+        $stmt = $db->prepare('UPDATE users SET free_deploy_days_left = 0 WHERE id = ?');
         $stmt->execute([$userId]);
     } else {
         $stmt = $db->prepare('SELECT * FROM wallets WHERE user_id = ?');
@@ -568,35 +621,42 @@ if ($uri === '/bots/deployments' && $method === 'POST') {
 
         $balance = (int)$wallet['balance_md'];
         $cost    = (int)$botType['costMd'];
-        if ($balance < $cost) respondError(400, "Insufficient balance. You need $cost MDs but have $balance MDs.");
+        if ($balance < $cost) respondError(400, "Insufficient balance. Need $cost MD, have $balance MD.");
 
         $stmt = $db->prepare('UPDATE wallets SET balance_md = balance_md - ?, balance_kes = balance_kes - ? WHERE user_id = ?');
         $stmt->execute([$cost, $cost, $userId]);
 
         $stmt = $db->prepare('INSERT INTO transactions (user_id, type, amount_md, description) VALUES (?, "deduction", ?, ?)');
-        $stmt->execute([$userId, -$cost, "Bot deployment: $botName ({$botType['name']})"]);
+        $stmt->execute([$userId, -$cost, "Bot deployment: $botName ({$botType['name']}) — " . DEPLOY_DAYS . " days"]);
     }
 
-    // CypherX: deploy to live VPS
-    $deployStatus       = 'running';
-    $externalContainerId = null;
+    // Deploy to live VPS based on bot type
+    $deployStatus    = 'running';
+    $externalBotId   = null;
+
+    $parsedConfig = [];
+    if ($config) { $tmp = json_decode($config, true); if (is_array($tmp)) $parsedConfig = $tmp; }
 
     if ($botTypeId === 'cypher-x') {
-        $parsedConfig = [];
-        if ($config) { $tmp = json_decode($config, true); if (is_array($tmp)) $parsedConfig = $tmp; }
+        $containerId = deployCypherX($parsedConfig['SESSION_ID'] ?? '', $parsedConfig['OWNER_NUMBER'] ?? '');
+        if ($containerId) { $externalBotId = $containerId; } else { $deployStatus = 'pending'; }
 
-        $sessionId   = $parsedConfig['SESSION_ID']   ?? '';
-        $ownerNumber = $parsedConfig['OWNER_NUMBER']  ?? '';
+    } elseif ($botTypeId === 'king-md') {
+        $botId = deployKingMD($parsedConfig['OWNER_NUMBER'] ?? '', $parsedConfig['SESSION_ID'] ?? '', $parsedConfig['COUNTRY_CODE'] ?? '254');
+        if ($botId) { $externalBotId = $botId; } else { $deployStatus = 'pending'; }
 
-        $containerId = deployCypherX($sessionId, $ownerNumber);
-        if ($containerId) {
-            $externalContainerId = $containerId;
-        } else {
-            $deployStatus = 'pending';
-        }
+    } elseif ($botTypeId === 'bwm-xmd-go') {
+        $uniqueName = safeBotName($botName, $userId);
+        $botId = deployBWM($uniqueName, $parsedConfig['OWNER_NUMBER'] ?? '', $parsedConfig['SESSION_ID'] ?? '');
+        if ($botId) { $externalBotId = $botId; } else { $deployStatus = 'pending'; }
+
+    } elseif ($botTypeId === 'atassa-cloud') {
+        $uniqueName = safeBotName($botName, $userId);
+        $botId = deployAtassa($uniqueName, $parsedConfig['SESSION_ID'] ?? '');
+        if ($botId) { $externalBotId = $botId; } else { $deployStatus = 'pending'; }
     }
 
-    $finalApiKey = $externalContainerId ?? $apiKey;
+    $finalApiKey = $externalBotId ?? $apiKey;
 
     $stmt = $db->prepare('INSERT INTO bot_deployments (user_id, bot_type_id, bot_name, status, api_key, config, is_free_deployment, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([$userId, $botTypeId, $botName, $deployStatus, $finalApiKey, $config, $isFreeDeployment ? 1 : 0, $expiresAt]);

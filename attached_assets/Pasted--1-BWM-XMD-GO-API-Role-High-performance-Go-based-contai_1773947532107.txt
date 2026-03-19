@@ -1,0 +1,82 @@
+## 1. BWM-XMD-GO API
+**Role:** High-performance Go-based container deployment.
+
+| Feature | Details |
+| :--- | :--- |
+| **Base URL** | `http://173.249.50.158:8443` |
+| **Auth Type** | Query Parameter (`key`) |
+| **Deployment Cost** | 60 DSC (Initial) |
+
+### **Endpoints**
+#### `POST /deploy`
+Deploys a new bot instance.
+* **Query Params:** `key=bwm2542026`, `bot_name=[unique_name]`
+* **Payload (JSON):**
+    ```json
+    {
+      "bot_name": "MyBot01",
+      "owner_number": "254110...",
+      "session": "BWM_SESSION_HERE"
+    }
+    ```
+* **Success Response:** Returns a JSON object containing the `id` or `deployment_id`.
+
+#### `GET /logs`
+Fetches real-time terminal output.
+* **Query Params:** `key=bwm2542026`, `bot_name=[unique_name]`
+
+---
+
+## 2. KING MD SERVER API
+**Role:** Specialized WhatsApp MD deployment with Country Code support.
+
+| Feature | Details |
+| :--- | :--- |
+| **Base URL** | `https://king.xcasper.site` |
+| **Auth Type** | Custom Header (`x-api-key`) |
+| **Deployment Cost** | 60 DSC (Initial) |
+
+### **Endpoints**
+#### `POST /deploy`
+Provisions a King-MD instance.
+* **Headers:** `x-api-key: kingmd254`
+* **Payload (JSON):**
+    ```json
+    {
+      "owner_number": "2547...",
+      "session": "KING_SESSION_HERE",
+      "code": "254"
+    }
+    ```
+* **Success Response:** Returns HTTP 200/201. Your script captures the `id` for database storage.
+
+---
+
+## 3. ATASSA CLOUD API
+**Role:** Secure cloud deployment with automated port allocation.
+
+| Feature | Details |
+| :--- | :--- |
+| **Base URL** | `https://atassa.xcasper.site` |
+| **Auth Type** | Query Parameter (`key`) |
+| **Deployment Cost** | 60 DSC (Initial) |
+
+### **Endpoints**
+#### `POST /deploy`
+Launches a bot on a specific random port.
+* **Query Params:** `key=atassa2026`
+* **Payload (JSON):**
+    ```json
+    {
+      "bot_name": "identifier",
+      "session_id": "Atassa~...",
+      "port": 5001
+    }
+    ```
+* **Success Response:** Returns container details. Our logic saves the `container_id` as the `vps_bot_id`.
+
+#### `GET /logs`
+Streams live console data.
+* **Query Params:** `key=atassa2026`, `name=[bot_name]`
+
+---

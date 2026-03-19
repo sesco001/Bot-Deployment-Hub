@@ -3,26 +3,32 @@ export interface BotTypeDefinition {
   name: string;
   description: string;
   costMd: number;
+  deployDays: number;
   apiEndpoint: string;
   features: string[];
   isActive: boolean;
+  badge?: string;
   envFields?: { key: string; label: string; placeholder: string; required: boolean; isSecret?: boolean; helpLink?: string }[];
 }
+
+export const DEPLOY_DAYS = 36;
 
 export const BOT_TYPES: BotTypeDefinition[] = [
   {
     id: "cypher-x",
     name: "Cypher X",
-    description: "The most advanced WhatsApp bot — powered by live VPS deployment. Supports AI replies, group management, media tools, and much more. Built for real deployment.",
+    description: "The most advanced WhatsApp bot — powered by live VPS deployment. Supports AI replies, group management, media tools, and much more.",
     costMd: 30,
+    deployDays: DEPLOY_DAYS,
     apiEndpoint: "/api/bots/cypher-x",
+    badge: "Live VPS",
     features: [
-      "Live VPS deployment",
+      "Live VPS deployment — 36 days nonstop",
       "AI-powered auto replies",
       "Group management & anti-delete",
       "Media downloads & stickers",
       "Custom commands",
-      "Multi-owner support"
+      "Multi-owner support",
     ],
     isActive: true,
     envFields: [
@@ -39,72 +45,106 @@ export const BOT_TYPES: BotTypeDefinition[] = [
         label: "Owner Phone Number",
         placeholder: "e.g. 254712345678",
         required: true,
-        isSecret: false,
       },
     ],
   },
   {
     id: "king-md",
     name: "King MD Bot",
-    description: "The flagship WhatsApp/Telegram bot with advanced automation, AI replies, and multi-platform support. Perfect for businesses and power users.",
+    description: "Specialized WhatsApp MD bot with country code support. Advanced automation, AI replies, and rock-solid group management for power users.",
     costMd: 30,
+    deployDays: DEPLOY_DAYS,
     apiEndpoint: "/api/bots/king-md",
+    badge: "Live VPS",
     features: [
+      "Live VPS deployment — 36 days nonstop",
       "AI-powered auto replies",
-      "Multi-platform support",
+      "Country code support",
       "Group management",
       "Media downloads",
-      "Custom commands",
-      "Admin controls"
+      "Admin controls",
     ],
     isActive: true,
+    envFields: [
+      {
+        key: "OWNER_NUMBER",
+        label: "Owner Phone Number (with country code)",
+        placeholder: "e.g. 254712345678",
+        required: true,
+      },
+      {
+        key: "SESSION_ID",
+        label: "King MD Session String",
+        placeholder: "KING_SESSION_HERE",
+        required: true,
+        isSecret: true,
+      },
+      {
+        key: "COUNTRY_CODE",
+        label: "Country Code",
+        placeholder: "e.g. 254",
+        required: true,
+      },
+    ],
   },
   {
-    id: "social-bot",
-    name: "Social Media Bot",
-    description: "Automate your social media presence with scheduled posts, engagement tools, and analytics across multiple platforms.",
+    id: "bwm-xmd-go",
+    name: "BWM-XMD-GO",
+    description: "High-performance Go-based WhatsApp bot with blazing fast container deployment. Built for reliability and speed on dedicated infrastructure.",
     costMd: 50,
-    apiEndpoint: "/api/bots/social-bot",
+    deployDays: DEPLOY_DAYS,
+    apiEndpoint: "/api/bots/bwm-xmd-go",
+    badge: "Live VPS",
     features: [
-      "Scheduled posting",
-      "Auto engagement",
-      "Cross-platform support",
-      "Analytics dashboard",
-      "Hashtag automation",
-      "DM automation"
+      "Live VPS deployment — 36 days nonstop",
+      "Go-powered high performance",
+      "Real-time log streaming",
+      "Auto media handling",
+      "Group & sticker tools",
+      "Fast boot time",
     ],
     isActive: true,
+    envFields: [
+      {
+        key: "OWNER_NUMBER",
+        label: "Owner Phone Number",
+        placeholder: "e.g. 254710000000",
+        required: true,
+      },
+      {
+        key: "SESSION_ID",
+        label: "BWM Session ID",
+        placeholder: "BWM_SESSION_HERE",
+        required: true,
+        isSecret: true,
+      },
+    ],
   },
   {
-    id: "ecommerce-bot",
-    name: "E-Commerce Bot",
-    description: "Handle customer inquiries, orders, and payments automatically with this powerful e-commerce automation bot.",
+    id: "atassa-cloud",
+    name: "Atassa Cloud",
+    description: "Secure cloud-hosted WhatsApp bot with automated port allocation and encrypted deployment. Ideal for group admins and business automation.",
     costMd: 50,
-    apiEndpoint: "/api/bots/ecommerce-bot",
+    deployDays: DEPLOY_DAYS,
+    apiEndpoint: "/api/bots/atassa-cloud",
+    badge: "Live VPS",
     features: [
-      "Order management",
-      "Payment integration",
-      "Inventory alerts",
-      "Customer support",
-      "Product catalog",
-      "Auto invoicing"
+      "Live VPS deployment — 36 days nonstop",
+      "Auto port allocation",
+      "Encrypted secure containers",
+      "Live console log streaming",
+      "Group automation",
+      "Always-on uptime",
     ],
     isActive: true,
-  },
-  {
-    id: "crypto-bot",
-    name: "Crypto Trading Bot",
-    description: "Monitor cryptocurrency markets and automate trading strategies with this advanced crypto bot.",
-    costMd: 50,
-    apiEndpoint: "/api/bots/crypto-bot",
-    features: [
-      "Real-time price alerts",
-      "Trading signals",
-      "Portfolio tracking",
-      "Multi-exchange support",
-      "Risk management",
-      "PnL reports"
+    envFields: [
+      {
+        key: "SESSION_ID",
+        label: "Atassa Session ID",
+        placeholder: "Atassa~...",
+        required: true,
+        isSecret: true,
+      },
     ],
-    isActive: false,
   },
 ];

@@ -100,7 +100,19 @@ All routes under `/api`:
 - `POST /referrals/apply` - Apply a referral code
 
 ## Bot Types (in artifacts/api-server/src/lib/botTypes.ts)
-Add new bot types here to register them in the marketplace.
+
+All 4 live bots — 36 days nonstop on VPS:
+
+| ID | Name | Cost | Deploy API |
+|----|------|------|------------|
+| `cypher-x` | Cypher X | 30 MD | `xdigitex.space/deploy_proxy.php` (x-api-key: cypherx2026) |
+| `king-md` | King MD Bot | 30 MD | `king.xcasper.site/deploy` (x-api-key: kingmd254) |
+| `bwm-xmd-go` | BWM-XMD-GO | 50 MD | `173.249.50.158:8443/deploy?key=bwm2542026` |
+| `atassa-cloud` | Atassa Cloud | 50 MD | `atassa.xcasper.site/deploy?key=atassa2026` |
+
+- `DEPLOY_DAYS = 36` constant used everywhere
+- Cypher X manage: `164.68.109.104:5050` (Auth-Key: 254MANAGER)
+- All deployments set `expiresAt = now + 36 days`
 
 ## Codegen
 Run after OpenAPI spec changes:
